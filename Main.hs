@@ -16,10 +16,13 @@ strtol = helper 0 where
     | isDigit x = helper (res* 10 + digitToInt x) (count-1) xs
     | otherwise = (res, x:xs, count)
 
+--
+-- Tokenizer
+--
 
 data TokenKind =
   EOF
-  | Punct String
+  | Punct Char
   | Num Int
   deriving (Eq, Show)
 
@@ -44,10 +47,9 @@ error_tok input tok = error_at input (tokenLoc tok)
 tokenize :: Int -> String -> [Either (Int, String) Token]
 tokenize c [] = [Right$ Token EOF 0 c]
 tokenize c (p:ps)
-  | p == ' '  = tokenize (c+1) ps
-  | p == '+'  = (Right $ Token (Punct "+") 1 c) : tokenize (c+1) ps
-  | p == '-'  = (Right $ Token (Punct "-") 1 c) : tokenize (c+1) ps
-  | isDigit p = (Right $ Token (Num number) len c) : tokenize (c+len) pss
+  | isSeparator p = tokenize (c+1) ps
+  | isPunctuation p || isSymbol p  =(Right $ Token (Punct p) 1 c) : tokenize (c+1) ps
+  | isDigit p       = (Right $ Token (Num number) len c) : tokenize (c+len) pss
   | otherwise = [Left (c, "invalid token")]
   where
     (number, pss, x) = strtol 10 (p:ps)
@@ -59,35 +61,147 @@ get_number input tok = do
   error_tok input tok "expected a number"
   return Nothing
 
+--
+-- Parser
+--
 
-compile :: String -> [Token] -> IO (Int)
-compile input [] = return 0
-compile input ((Token (Punct x) _ _): ts)
-  | x == "+" = do
-      let tok = head ts
-      res <- get_number input tok
-      case res of
-        Just v -> do
-          printf "  add $%d, %%rax\n" v
-          compile input $ tail ts
-        Nothing -> return 1
-  | x == "-" = do
-      let tok = head ts
-      res <- get_number input tok
-      case res of
-        Just v -> do
-          printf "  sub $%d, %%rax\n" v
-          compile input $ tail ts
-        Nothing -> return 1
+data Node =
+  NUM Int
+  | ADD Node Node
+  | SUB Node Node
+  | MUL Node Node
+  | DIV Node Node
+  deriving (Show, Eq)
+
+expr    :: String -> [Token] -> IO (Either Int (Node, [Token]))
+mul     :: String -> [Token] -> IO (Either Int (Node, [Token]))
+primary :: String -> [Token] -> IO (Either Int (Node, [Token]))
+
+head_equal :: [Token] -> TokenKind -> Bool
+head_equal ((Token (Punct a) _ _) : _) (Punct b) = a == b
+head_equal ((Token EOF _ _) : _) EOF = True
+head_equal [] _ = False
+head_equal _ (Num x) = False
+head_equal _ (Punct b) = False
+head_equal _ _ = False
+
+-- expr =  + | -
+expr_helper    :: String -> Node -> [Token] -> IO (Either Int (Node, [Token]))
+expr_helper input lhs toks
+ | head_equal toks (Punct '+') = do
+     Right (rhs, ts) <- mul input (tail toks)
+     expr_helper input (ADD lhs rhs) ts
+
+ | head_equal toks (Punct '-') = do
+     Right (rhs, ts) <- mul input (tail toks)
+     expr_helper input (SUB lhs rhs) ts
+
+ | otherwise = return $ Right (lhs, toks)
+
+expr input toks = do
+  node <- mul input toks
+  case node of
+    Left code -> return (Left code)
+    Right (node, ts) -> expr_helper input node ts
+
+
+mul_helper    :: String -> Node -> [Token] -> IO (Either Int (Node, [Token]))
+mul_helper input lhs toks
+ | head_equal toks (Punct '*') = do
+     Right (rhs, ts) <- primary input (tail toks)
+     expr_helper input (MUL lhs rhs) ts
+
+ | head_equal toks (Punct '/') = do
+     Right (rhs, ts) <- primary input (tail toks)
+     expr_helper input (DIV lhs rhs) ts
+
+ | otherwise = return $ Right (lhs, toks)
+
+
+mul input toks = do
+  node <- primary input toks
+  case node of
+    Left code -> return (Left code)
+    Right (node, ts) -> mul_helper input node ts
+
+
+skip :: String -> [Token] -> TokenKind -> IO (Either Int [Token])
+skip input (t:ts) tok
+  | head_equal (t:ts) tok = return $ Right ts
   | otherwise = do
-    hPutStrLn stderr $ "Unexpected punct" ++ x
-    return 1
+      error_tok input t $ "expected " ++ show tok
+      return $ Left 1
 
-compile _ ((Token (EOF) _ _): ts) = return 0
+-- primay = "(" expr ")" | num
+primary input ((Token (Num v) _ _): ts) = do
+  return (Right (NUM v, ts))
 
-compile _ t@((Token (Num v) _ _): ts) = do
-  hPutStrLn stderr $ "Unexpected token" ++ show t
-  return 0
+primary input toks@(t:ts)
+  | head_equal toks (Punct '(') = do
+      Right (node, tss) <- expr input ts
+      Right tsss <- skip input tss (Punct ')')
+      return $ Right (node, tsss)
+
+
+  | otherwise = do
+    code <- error_tok input t "expected an expression"
+    return $ Left code
+
+
+--
+-- Code generator
+--
+push :: Int -> IO (Int)
+push depth = do
+  printf "  push %%rax\n"
+  return (depth +1)
+
+pop :: Int -> String ->  IO (Int)
+pop depth text= do
+  printf "  pop %s\n" text
+  return (depth-1)
+
+gen_expr ::Int -> Node -> IO (Int)
+gen_expr depth (NUM a) = do
+  printf "  mov $%d, %%rax\n" a
+  return depth
+
+gen_expr depth (ADD lhs rhs) = do
+  gen_expr depth rhs
+  depth <- push depth
+  gen_expr depth lhs
+  depth <- pop depth "%rdi"
+  printf "  add %%rdi, %%rax\n"
+  return depth
+
+gen_expr depth (SUB lhs rhs) = do
+  gen_expr depth rhs
+  depth <- push depth
+  gen_expr depth lhs
+  depth <- pop depth "%rdi"
+  printf "  sub %%rdi, %%rax\n"
+  return depth
+
+gen_expr depth (MUL lhs rhs) = do
+  gen_expr depth rhs
+  depth <- push depth
+  gen_expr depth lhs
+  depth <- pop depth "%rdi"
+  printf "  imul %%rdi, %%rax\n"
+  return depth
+
+gen_expr depth (DIV lhs rhs) = do
+  gen_expr depth rhs
+  depth <- push depth
+  gen_expr depth lhs
+  depth <- pop depth "%rdi"
+  printf "  cqo\n"
+  printf "  idiv %%rdi\n"
+  return depth
+
+assert :: Bool -> a -> a
+assert False x = error "assertion failed!"
+assert _     x = x
 
 main :: IO (Int)
 main = do
@@ -98,17 +212,19 @@ main = do
   else do
     let p = head args
     let res = sequence $ tokenize 0 p
-    printf "  .globl main\n"
-    printf "main:\n"
     case res of
       Left (loc, text) -> do
         error_at p loc text
       Right toks -> do
-        let (Num a) = tokenKind $ head toks
-        printf "  mov $%d, %%rax\n" a
-        ret <- compile p $tail toks
-        if ret == 0
-          then do
-            printf "  ret\n"
-            return 0
-          else return ret
+        Right (node, ts) <- expr p toks
+        if not $ head_equal ts EOF
+        then do
+          error_tok p (head ts) "extra token"
+          return 1
+        else do
+          printf "  .globl main\n"
+          printf "main:\n"
+          -- Traverse the AST to emit assembly
+          depth <- gen_expr 0 node
+          printf("  ret\n");
+          return (assert (depth == 0) 0)
