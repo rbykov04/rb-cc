@@ -31,52 +31,63 @@ data Token = Token
   }
   deriving (Eq, Show)
 
-tokenize :: Int -> String -> [Either String Token]
+error_at :: String -> Int -> String -> IO (Int)
+error_at current_input loc text = do
+  hPutStrLn stderr $ current_input
+  hPutStrLn stderr $ replicate loc ' ' ++ "^ " ++ text
+  return 1
+
+
+error_tok :: String -> Token -> String -> IO (Int)
+error_tok input tok = error_at input (tokenLoc tok)
+
+tokenize :: Int -> String -> [Either (Int, String) Token]
 tokenize c [] = [Right$ Token EOF 0 c]
 tokenize c (p:ps)
   | p == ' '  = tokenize (c+1) ps
   | p == '+'  = (Right $ Token (Punct "+") 1 c) : tokenize (c+1) ps
   | p == '-'  = (Right $ Token (Punct "-") 1 c) : tokenize (c+1) ps
   | isDigit p = (Right $ Token (Num number) len c) : tokenize (c+len) pss
-  | otherwise = [Left $ "pos " ++ show c ++ ": Unknown token: " ++ p:ps]
+  | otherwise = [Left (c, "invalid token")]
   where
     (number, pss, x) = strtol 10 (p:ps)
     len = 10 - x
 
-compile :: [Token] -> IO (Int)
-compile [] = return 0
-compile ((Token (Punct x) _ _): ts)
+get_number :: String -> Token -> IO (Maybe Int)
+get_number input (Token (Num v) _ _) = return (Just v)
+get_number input tok = do
+  error_tok input tok "expected a number"
+  return Nothing
+
+
+compile :: String -> [Token] -> IO (Int)
+compile input [] = return 0
+compile input ((Token (Punct x) _ _): ts)
   | x == "+" = do
-      case head ts of
-        (Token (Num v) _ _) -> do
+      let tok = head ts
+      res <- get_number input tok
+      case res of
+        Just v -> do
           printf "  add $%d, %%rax\n" v
-          compile $ tail ts
-        t@(Token _ len c) -> do
-          hPutStrLn stderr $ "Unexpected token" ++ show t
-          return 1
+          compile input $ tail ts
+        Nothing -> return 1
   | x == "-" = do
-      case head ts of
-        (Token (Num v) _ _) -> do
+      let tok = head ts
+      res <- get_number input tok
+      case res of
+        Just v -> do
           printf "  sub $%d, %%rax\n" v
-          compile $ tail ts
-        t@(Token _ len c) -> do
-          hPutStrLn stderr $ "Unexpected token" ++ show t
-          return 1
+          compile input $ tail ts
+        Nothing -> return 1
   | otherwise = do
     hPutStrLn stderr $ "Unexpected punct" ++ x
     return 1
 
-compile ((Token (EOF) _ _): ts) = return 0
+compile _ ((Token (EOF) _ _): ts) = return 0
 
-compile t@((Token (Num v) _ _): ts) = do
+compile _ t@((Token (Num v) _ _): ts) = do
   hPutStrLn stderr $ "Unexpected token" ++ show t
   return 0
-
-        
-
-
-
-
 
 main :: IO (Int)
 main = do
@@ -90,13 +101,12 @@ main = do
     printf "  .globl main\n"
     printf "main:\n"
     case res of
-      Left e -> do
-        hPutStrLn stderr e
-        return 1
+      Left (loc, text) -> do
+        error_at p loc text
       Right toks -> do
         let (Num a) = tokenKind $ head toks
         printf "  mov $%d, %%rax\n" a
-        ret <- compile $tail toks
+        ret <- compile p $tail toks
         if ret == 0
           then do
             printf "  ret\n"
