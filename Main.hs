@@ -59,6 +59,7 @@ get_number input tok = do
 --
 -- Parser
 --
+data Error = ErrorCode Int | ErrorText String | ErrorToken Token String deriving Show
 
 data Node =
   NUM Int
@@ -68,9 +69,9 @@ data Node =
   | DIV Node Node
   deriving (Show, Eq)
 
-expr    :: String -> [Token] -> IO (Either Int (Node, [Token]))
-mul     :: String -> [Token] -> IO (Either Int (Node, [Token]))
-primary :: String -> [Token] -> IO (Either Int (Node, [Token]))
+expr    :: [Token] -> IO (Either Error (Node, [Token]))
+mul     :: [Token] -> IO (Either Error (Node, [Token]))
+primary :: [Token] -> IO (Either Error (Node, [Token]))
 
 head_equal :: [Token] -> TokenKind -> Bool
 head_equal ((Token (Punct a) _ _) : _) (Punct b) = a == b
@@ -83,44 +84,46 @@ head_equal _ _ = False
 join_bin sub bin_ops = parser_t where
   ops = map toPunct bin_ops
   toPunct (str, op) = (Punct str, op)
-  parser_t input toks = do
-      node <- sub input toks
+  parser_t toks = do
+      node <- sub toks
       case node of
         Left code -> return (Left code)
-        Right (node, ts) -> join input node ts
+        Right (node, ts) -> join node ts
 
-  join input lhs toks = (apply_binary . tokenKind . head) toks where
+  join lhs toks = (apply_binary . tokenKind . head) toks where
     apply_binary t = case lookup t ops of
       Just op -> do
-        Right (rhs, ts) <- sub input (tail toks)
-        join input (op lhs rhs) ts
+        res <- sub (tail toks)
+        case res of
+          Left e -> return (Left e)
+          Right (rhs, ts) -> join (op lhs rhs) ts
       Nothing -> return $ Right (lhs, toks)
 
 
 expr = join_bin mul     [("+", ADD), ("-", SUB)]
 mul  = join_bin primary [("*", MUL), ("/", DIV)]
 
-skip :: String -> [Token] -> TokenKind -> IO (Either Int [Token])
-skip input (t:ts) tok
-  | head_equal (t:ts) tok = return $ Right ts
-  | otherwise = do
-      error_tok input t $ "expected " ++ show tok
-      return $ Left 1
+skip :: [Token] -> TokenKind -> Either Error [Token]
+skip (t:ts) tok
+  | head_equal (t:ts) tok = Right ts
+  | otherwise = Left (ErrorToken t ("expected" ++ show tok))
 
 -- primay = "(" expr ")" | num
-primary input ((Token (Num v) _ _): ts) = do
+primary ((Token (Num v) _ _): ts) = do
   return (Right (NUM v, ts))
 
-primary input toks@(t:ts)
+primary toks@(t:ts)
   | head_equal toks (Punct "(") = do
-      Right (node, tss) <- expr input ts
-      Right tsss <- skip input tss (Punct ")")
+      Right (node, tss) <- expr ts
+      let (Right tsss) = skip tss (Punct ")")
       return $ Right (node, tsss)
 
   | otherwise = do
-    code <- error_tok input t "expected an expression"
-    return $ Left code
+    return $ Left (ErrorToken t "expected an expression")
 
+printError :: String -> Error -> IO (Int)
+printError input (ErrorToken t text) = do
+  error_tok input t text
 --
 -- Code generator
 --
@@ -189,15 +192,18 @@ main = do
       Left (loc, text) -> do
         error_at p loc text
       Right toks -> do
-        Right (node, ts) <- expr p toks
-        if not $ head_equal ts EOF
-        then do
-          error_tok p (head ts) "extra token"
-          return 1
-        else do
-          printf "  .globl main\n"
-          printf "main:\n"
-          -- Traverse the AST to emit assembly
-          depth <- gen_expr 0 node
-          printf("  ret\n");
-          return (assert (depth == 0) 0)
+        parse_res <- expr toks
+        case parse_res of
+          Left err -> printError p err
+          Right (node, ts) ->
+            if not $ head_equal ts EOF
+            then do
+              error_tok p (head ts) "extra token"
+              return 1
+            else do
+              printf "  .globl main\n"
+              printf "main:\n"
+              -- Traverse the AST to emit assembly
+              depth <- gen_expr 0 node
+              printf("  ret\n");
+              return (assert (depth == 0) 0)
