@@ -60,13 +60,11 @@ get_number input tok = do
 -- Parser
 --
 data Error = ErrorCode Int | ErrorText String | ErrorToken Token String deriving Show
+data BinOp = Add | Sub | Mul | Div deriving (Show, Eq)
 
 data Node =
   NUM Int
-  | ADD Node Node
-  | SUB Node Node
-  | MUL Node Node
-  | DIV Node Node
+  | BIN_OP BinOp Node Node
   deriving (Show, Eq)
 
 expr    :: [Token] -> Either Error (Node, [Token])
@@ -94,8 +92,8 @@ join_bin sub bin_ops toks = do
           join (op lhs rhs) ts
         Nothing ->  Right (lhs, toks)
 
-expr = join_bin mul     [("+", ADD), ("-", SUB)]
-mul  = join_bin primary [("*", MUL), ("/", DIV)]
+expr = join_bin mul     [("+", BIN_OP Add), ("-", BIN_OP Sub)]
+mul  = join_bin primary [("*", BIN_OP Mul), ("/", BIN_OP Div)]
 
 skip :: [Token] -> TokenKind -> Either Error [Token]
 skip (t:ts) tok
@@ -134,38 +132,25 @@ gen_expr depth (NUM a) = do
   printf "  mov $%d, %%rax\n" a
   return depth
 
-gen_expr depth (ADD lhs rhs) = do
+gen_expr depth (BIN_OP op lhs rhs) = do
   gen_expr depth rhs
   depth <- push depth
   gen_expr depth lhs
   depth <- pop depth "%rdi"
+  gen_bin_op op
+  return depth
+
+gen_bin_op :: BinOp -> IO ()
+gen_bin_op Add = do
   printf "  add %%rdi, %%rax\n"
-  return depth
-
-gen_expr depth (SUB lhs rhs) = do
-  gen_expr depth rhs
-  depth <- push depth
-  gen_expr depth lhs
-  depth <- pop depth "%rdi"
+gen_bin_op Sub = do
   printf "  sub %%rdi, %%rax\n"
-  return depth
-
-gen_expr depth (MUL lhs rhs) = do
-  gen_expr depth rhs
-  depth <- push depth
-  gen_expr depth lhs
-  depth <- pop depth "%rdi"
+gen_bin_op Mul = do
   printf "  imul %%rdi, %%rax\n"
-  return depth
-
-gen_expr depth (DIV lhs rhs) = do
-  gen_expr depth rhs
-  depth <- push depth
-  gen_expr depth lhs
-  depth <- pop depth "%rdi"
+gen_bin_op Div = do
   printf "  cqo\n"
   printf "  idiv %%rdi\n"
-  return depth
+
 
 assert :: Bool -> a -> a
 assert False x = error "assertion failed!"
