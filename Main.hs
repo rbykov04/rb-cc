@@ -42,8 +42,22 @@ error_tok input tok = error_at input (tokenLoc tok)
 tokenize :: Int -> String -> [Either (Int, String) Token]
 tokenize c [] = [Right$ Token EOF 0 c]
 tokenize c (p:ps)
+  | not (ps == []) &&
+      (
+          (p == '>' && head ps == '=')
+       || (p == '<' && head ps == '=')
+       || (p == '!' && head ps == '=')
+       || (p == '=' && head ps == '=')
+
+       )
+        =(Right $ Token (Punct (p:(head ps):[])) 2 c) : tokenize (c+2) (tail ps)
+
   | isSeparator p = tokenize (c+1) ps
-  | isPunctuation p || isSymbol p  =(Right $ Token (Punct [p]) 1 c) : tokenize (c+1) ps
+  | isPunctuation p
+    || isSymbol p
+    || p == '>' || p == '<'
+      =(Right $ Token (Punct [p]) 1 c) : tokenize (c+1) ps
+
   | isDigit p       = (Right $ Token (Num number) len c) : tokenize (c+len) pss
   | otherwise = [Left (c, "invalid token")]
   where
@@ -60,7 +74,16 @@ get_number input tok = do
 -- Parser
 --
 data Error = ErrorCode Int | ErrorText String | ErrorToken Token String deriving Show
-data BinOp = Add | Sub | Mul | Div deriving (Show, Eq)
+data BinOp =
+  Add
+  | Sub
+  | Mul
+  | Div
+  | ND_EQ
+  | ND_NE
+  | ND_LT
+  | ND_LE
+  deriving (Show, Eq)
 data UnOp = Neg deriving (Show, Eq)
 
 data Node =
@@ -69,10 +92,13 @@ data Node =
   | UNARY UnOp Node
   deriving (Show, Eq)
 
-expr    :: [Token] -> Either Error (Node, [Token])
-mul     :: [Token] -> Either Error (Node, [Token])
-unary   :: [Token] -> Either Error (Node, [Token])
-primary :: [Token] -> Either Error (Node, [Token])
+expr       :: [Token] -> Either Error (Node, [Token])
+equality   :: [Token] -> Either Error (Node, [Token])
+relational :: [Token] -> Either Error (Node, [Token])
+add        :: [Token] -> Either Error (Node, [Token])
+mul        :: [Token] -> Either Error (Node, [Token])
+unary      :: [Token] -> Either Error (Node, [Token])
+primary    :: [Token] -> Either Error (Node, [Token])
 
 head_equal :: [Token] -> TokenKind -> Bool
 head_equal ((Token (Punct a) _ _) : _) (Punct b) = a == b
@@ -95,8 +121,18 @@ join_bin sub bin_ops toks = do
           join (op lhs rhs) ts
         Nothing ->  Right (lhs, toks)
 
-expr = join_bin mul     [("+", BIN_OP Add), ("-", BIN_OP Sub)]
-mul  = join_bin unary [("*", BIN_OP Mul), ("/", BIN_OP Div)]
+expr       = equality
+equality   = join_bin relational [("==", BIN_OP ND_EQ), ("!=", BIN_OP ND_NE)]
+relational = join_bin add
+  [
+    ("<",  BIN_OP ND_LT),
+    ("<=", BIN_OP ND_LE),
+    (">",  flip (BIN_OP ND_LT)),
+    (">=", flip (BIN_OP ND_LE))
+  ]
+
+add        = join_bin mul        [("+", BIN_OP Add), ("-", BIN_OP Sub)]
+mul        = join_bin unary      [("*", BIN_OP Mul), ("/", BIN_OP Div)]
 
 unary toks@(t:ts)
   | head_equal toks (Punct "+") = unary ts
@@ -168,6 +204,19 @@ gen_bin_op Mul = do
 gen_bin_op Div = do
   printf "  cqo\n"
   printf "  idiv %%rdi\n"
+
+gen_bin_op ND_EQ = do
+  printf " cmp %%rdi, %%rax\n"
+  printf " sete %%al\n"
+gen_bin_op ND_NE = do
+  printf " cmp %%rdi, %%rax\n"
+  printf " setne %%al\n"
+gen_bin_op ND_LT = do
+  printf " cmp %%rdi, %%rax\n"
+  printf " setl %%al\n"
+gen_bin_op ND_LE = do
+  printf " cmp %%rdi, %%rax\n"
+  printf " setle %%al\n"
 
 
 assert :: Bool -> a -> a
