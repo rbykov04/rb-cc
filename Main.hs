@@ -69,9 +69,9 @@ data Node =
   | DIV Node Node
   deriving (Show, Eq)
 
-expr    :: [Token] -> IO (Either Error (Node, [Token]))
-mul     :: [Token] -> IO (Either Error (Node, [Token]))
-primary :: [Token] -> IO (Either Error (Node, [Token]))
+expr    :: [Token] -> Either Error (Node, [Token])
+mul     :: [Token] -> Either Error (Node, [Token])
+primary :: [Token] -> Either Error (Node, [Token])
 
 head_equal :: [Token] -> TokenKind -> Bool
 head_equal ((Token (Punct a) _ _) : _) (Punct b) = a == b
@@ -85,19 +85,19 @@ join_bin sub bin_ops = parser_t where
   ops = map toPunct bin_ops
   toPunct (str, op) = (Punct str, op)
   parser_t toks = do
-      node <- sub toks
+      let node = sub toks
       case node of
-        Left code -> return (Left code)
+        Left code -> Left code
         Right (node, ts) -> join node ts
 
   join lhs toks = (apply_binary . tokenKind . head) toks where
     apply_binary t = case lookup t ops of
       Just op -> do
-        res <- sub (tail toks)
+        let res = sub (tail toks)
         case res of
-          Left e -> return (Left e)
+          Left e -> Left e
           Right (rhs, ts) -> join (op lhs rhs) ts
-      Nothing -> return $ Right (lhs, toks)
+      Nothing ->  Right (lhs, toks)
 
 
 expr = join_bin mul     [("+", ADD), ("-", SUB)]
@@ -109,17 +109,15 @@ skip (t:ts) tok
   | otherwise = Left (ErrorToken t ("expected" ++ show tok))
 
 -- primay = "(" expr ")" | num
-primary ((Token (Num v) _ _): ts) = do
-  return (Right (NUM v, ts))
+primary ((Token (Num v) _ _): ts) = Right (NUM v, ts)
 
 primary toks@(t:ts)
   | head_equal toks (Punct "(") = do
-      Right (node, tss) <- expr ts
+      let Right (node, tss) = expr ts
       let (Right tsss) = skip tss (Punct ")")
-      return $ Right (node, tsss)
+      Right (node, tsss)
 
-  | otherwise = do
-    return $ Left (ErrorToken t "expected an expression")
+  | otherwise = Left (ErrorToken t "expected an expression")
 
 printError :: String -> Error -> IO (Int)
 printError input (ErrorToken t text) = do
@@ -192,7 +190,7 @@ main = do
       Left (loc, text) -> do
         error_at p loc text
       Right toks -> do
-        parse_res <- expr toks
+        let parse_res = expr toks
         case parse_res of
           Left err -> printError p err
           Right (node, ts) ->
