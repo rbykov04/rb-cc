@@ -61,14 +61,17 @@ get_number input tok = do
 --
 data Error = ErrorCode Int | ErrorText String | ErrorToken Token String deriving Show
 data BinOp = Add | Sub | Mul | Div deriving (Show, Eq)
+data UnOp = Neg deriving (Show, Eq)
 
 data Node =
   NUM Int
   | BIN_OP BinOp Node Node
+  | UNARY UnOp Node
   deriving (Show, Eq)
 
 expr    :: [Token] -> Either Error (Node, [Token])
 mul     :: [Token] -> Either Error (Node, [Token])
+unary   :: [Token] -> Either Error (Node, [Token])
 primary :: [Token] -> Either Error (Node, [Token])
 
 head_equal :: [Token] -> TokenKind -> Bool
@@ -93,7 +96,17 @@ join_bin sub bin_ops toks = do
         Nothing ->  Right (lhs, toks)
 
 expr = join_bin mul     [("+", BIN_OP Add), ("-", BIN_OP Sub)]
-mul  = join_bin primary [("*", BIN_OP Mul), ("/", BIN_OP Div)]
+mul  = join_bin unary [("*", BIN_OP Mul), ("/", BIN_OP Div)]
+
+unary toks@(t:ts)
+  | head_equal toks (Punct "+") = unary ts
+
+  | head_equal toks (Punct "-") = do
+      (node,tss) <- unary ts
+      return (UNARY Neg node, tss)
+
+  | otherwise = primary toks
+
 
 skip :: [Token] -> TokenKind -> Either Error [Token]
 skip (t:ts) tok
@@ -130,6 +143,11 @@ pop depth text= do
 gen_expr ::Int -> Node -> IO (Int)
 gen_expr depth (NUM a) = do
   printf "  mov $%d, %%rax\n" a
+  return depth
+
+gen_expr depth (UNARY Neg a) = do
+  gen_expr depth a
+  printf "  neg %%rax\n"
   return depth
 
 gen_expr depth (BIN_OP op lhs rhs) = do
