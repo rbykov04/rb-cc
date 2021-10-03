@@ -81,24 +81,18 @@ head_equal _ (Num x) = False
 head_equal _ (Punct b) = False
 head_equal _ _ = False
 
-join_bin sub bin_ops = parser_t where
-  ops = map toPunct bin_ops
-  toPunct (str, op) = (Punct str, op)
-  parser_t toks = do
-      let node = sub toks
-      case node of
-        Left code -> Left code
-        Right (node, ts) -> join node ts
+toPunct (str, op) = (Punct str, op)
 
-  join lhs toks = (apply_binary . tokenKind . head) toks where
-    apply_binary t = case lookup t ops of
-      Just op -> do
-        let res = sub (tail toks)
-        case res of
-          Left e -> Left e
-          Right (rhs, ts) -> join (op lhs rhs) ts
-      Nothing ->  Right (lhs, toks)
-
+join_bin sub bin_ops toks = do
+  (node, ts) <- sub toks
+  join node ts
+  where
+    join lhs toks = (apply_binary . tokenKind . head) toks where
+      apply_binary t = case lookup t (map toPunct bin_ops) of
+        Just op -> do
+          (rhs,ts) <- sub (tail toks)
+          join (op lhs rhs) ts
+        Nothing ->  Right (lhs, toks)
 
 expr = join_bin mul     [("+", ADD), ("-", SUB)]
 mul  = join_bin primary [("*", MUL), ("/", DIV)]
@@ -113,9 +107,9 @@ primary ((Token (Num v) _ _): ts) = Right (NUM v, ts)
 
 primary toks@(t:ts)
   | head_equal toks (Punct "(") = do
-      let Right (node, tss) = expr ts
-      let (Right tsss) = skip tss (Punct ")")
-      Right (node, tsss)
+      (node, tss) <- expr ts
+      tsss <- skip tss (Punct ")")
+      return (node, tsss)
 
   | otherwise = Left (ErrorToken t "expected an expression")
 
