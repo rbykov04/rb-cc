@@ -4,10 +4,6 @@ import System.IO
 import Text.Printf
 import Data.Char
 
-
-getInt :: String -> Int
-getInt s = read s
-
 strtol :: Int -> String -> (Int, String, Int)
 strtol = helper 0 where
   helper res c [] = (res,[], c)
@@ -22,7 +18,7 @@ strtol = helper 0 where
 
 data TokenKind =
   EOF
-  | Punct Char
+  | Punct String
   | Num Int
   deriving (Eq, Show)
 
@@ -40,7 +36,6 @@ error_at current_input loc text = do
   hPutStrLn stderr $ replicate loc ' ' ++ "^ " ++ text
   return 1
 
-
 error_tok :: String -> Token -> String -> IO (Int)
 error_tok input tok = error_at input (tokenLoc tok)
 
@@ -48,7 +43,7 @@ tokenize :: Int -> String -> [Either (Int, String) Token]
 tokenize c [] = [Right$ Token EOF 0 c]
 tokenize c (p:ps)
   | isSeparator p = tokenize (c+1) ps
-  | isPunctuation p || isSymbol p  =(Right $ Token (Punct p) 1 c) : tokenize (c+1) ps
+  | isPunctuation p || isSymbol p  =(Right $ Token (Punct [p]) 1 c) : tokenize (c+1) ps
   | isDigit p       = (Right $ Token (Num number) len c) : tokenize (c+len) pss
   | otherwise = [Left (c, "invalid token")]
   where
@@ -85,45 +80,25 @@ head_equal _ (Num x) = False
 head_equal _ (Punct b) = False
 head_equal _ _ = False
 
--- expr =  + | -
-expr_helper    :: String -> Node -> [Token] -> IO (Either Int (Node, [Token]))
-expr_helper input lhs toks
- | head_equal toks (Punct '+') = do
-     Right (rhs, ts) <- mul input (tail toks)
-     expr_helper input (ADD lhs rhs) ts
+join_bin sub bin_ops = parser_t where
+  ops = map toPunct bin_ops
+  toPunct (str, op) = (Punct str, op)
+  parser_t input toks = do
+      node <- sub input toks
+      case node of
+        Left code -> return (Left code)
+        Right (node, ts) -> join input node ts
 
- | head_equal toks (Punct '-') = do
-     Right (rhs, ts) <- mul input (tail toks)
-     expr_helper input (SUB lhs rhs) ts
-
- | otherwise = return $ Right (lhs, toks)
-
-expr input toks = do
-  node <- mul input toks
-  case node of
-    Left code -> return (Left code)
-    Right (node, ts) -> expr_helper input node ts
+  join input lhs toks = (apply_binary . tokenKind . head) toks where
+    apply_binary t = case lookup t ops of
+      Just op -> do
+        Right (rhs, ts) <- sub input (tail toks)
+        join input (op lhs rhs) ts
+      Nothing -> return $ Right (lhs, toks)
 
 
-mul_helper    :: String -> Node -> [Token] -> IO (Either Int (Node, [Token]))
-mul_helper input lhs toks
- | head_equal toks (Punct '*') = do
-     Right (rhs, ts) <- primary input (tail toks)
-     expr_helper input (MUL lhs rhs) ts
-
- | head_equal toks (Punct '/') = do
-     Right (rhs, ts) <- primary input (tail toks)
-     expr_helper input (DIV lhs rhs) ts
-
- | otherwise = return $ Right (lhs, toks)
-
-
-mul input toks = do
-  node <- primary input toks
-  case node of
-    Left code -> return (Left code)
-    Right (node, ts) -> mul_helper input node ts
-
+expr = join_bin mul     [("+", ADD), ("-", SUB)]
+mul  = join_bin primary [("*", MUL), ("/", DIV)]
 
 skip :: String -> [Token] -> TokenKind -> IO (Either Int [Token])
 skip input (t:ts) tok
@@ -137,16 +112,14 @@ primary input ((Token (Num v) _ _): ts) = do
   return (Right (NUM v, ts))
 
 primary input toks@(t:ts)
-  | head_equal toks (Punct '(') = do
+  | head_equal toks (Punct "(") = do
       Right (node, tss) <- expr input ts
-      Right tsss <- skip input tss (Punct ')')
+      Right tsss <- skip input tss (Punct ")")
       return $ Right (node, tsss)
-
 
   | otherwise = do
     code <- error_tok input t "expected an expression"
     return $ Left code
-
 
 --
 -- Code generator
