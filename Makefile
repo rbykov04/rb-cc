@@ -1,7 +1,9 @@
-GHC = ghc
+GHC= ghc
+SRCS=$(wildcard *.hs)
+OBJS=$(SRCS:=.hs=.o)
 
-rb-cc: Main.hs
-	$(GHC)  --make  -o rb-cc Main.hs
+rb-cc: $(SRCS)
+	$(GHC)  --make  -o rb-cc $(SRCS)
 
 test: rb-cc
 	./test.sh
