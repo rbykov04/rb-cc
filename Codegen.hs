@@ -1,4 +1,5 @@
 module Codegen where
+import System.IO
 import Text.Printf
 import RBCC
 
@@ -29,6 +30,19 @@ gen_expr depth (BIN_OP op lhs rhs) = do
   depth <- pop depth "%rdi"
   gen_bin_op op
   return depth
+
+gen_stmt :: Node -> IO (Int)
+gen_stmt (EXPS_STMT []) = do return 0
+
+gen_stmt (EXPS_STMT (n:ns)) = do
+  depth <- gen_expr 0 n
+  let _ = assert (depth == 0) 0
+  gen_stmt (EXPS_STMT ns)
+
+gen_stmt _ = do
+  hPutStrLn stderr "invalid statement"
+  return 1
+
 
 gen_bin_op :: BinOp -> IO ()
 gen_bin_op Add = do
@@ -65,6 +79,6 @@ codegen node = do
   printf "  .globl main\n"
   printf "main:\n"
   -- Traverse the AST to emit assembly
-  depth <- gen_expr 0 node
+  _ <- gen_stmt  node
   printf("  ret\n");
-  return $ assert (depth == 0) 0
+  return 0

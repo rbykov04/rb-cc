@@ -6,6 +6,7 @@ import Codegen
 import Tokenize
 
 expr       :: [Token] -> Either Error (Node, [Token])
+expr_stmt  :: [Token] -> Either Error (Node, [Token])
 equality   :: [Token] -> Either Error (Node, [Token])
 relational :: [Token] -> Either Error (Node, [Token])
 add        :: [Token] -> Either Error (Node, [Token])
@@ -47,6 +48,7 @@ relational = join_bin add
 add        = join_bin mul        [("+", BIN_OP Add), ("-", BIN_OP Sub)]
 mul        = join_bin unary      [("*", BIN_OP Mul), ("/", BIN_OP Div)]
 
+
 unary toks@(t:ts)
   | head_equal toks (Punct "+") = unary ts
 
@@ -73,9 +75,27 @@ primary toks@(t:ts)
 
   | otherwise = Left (ErrorToken t "expected an expression")
 
+
+
+expr_stmt toks = do
+  (node, tss) <- expr toks
+  tsss <- skip tss (Punct ";")
+  return (EXPS_STMT [node], tsss)
+
+stmt  = expr_stmt
+
+program :: [Token] -> Either Error (Node, [Token])
+program toks = do
+  (EXPS_STMT node, ts) <- stmt toks
+  if not $ head_equal ts EOF
+  then do
+    (EXPS_STMT nodes, tss) <- program ts
+    return (EXPS_STMT (node ++ nodes), tss)
+  else return (EXPS_STMT node, ts)
+
 parse :: [Token] -> Either Error (Node, [Token])
 parse toks = do
-  (node, ts) <- expr toks
+  (node, ts) <- program toks
   if not $ head_equal ts EOF
   then Left (ErrorToken (head ts) "extra token")
   else return (node, ts)

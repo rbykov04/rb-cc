@@ -38,4 +38,5 @@ data Node =
   NUM Int
   | BIN_OP BinOp Node Node
   | UNARY UnOp Node
+  | EXPS_STMT [Node]
   deriving (Show, Eq)
