@@ -7,6 +7,7 @@ import Tokenize
 
 expr       :: [Token] -> Either Error (Node, [Token])
 expr_stmt  :: [Token] -> Either Error (Node, [Token])
+assign     :: [Token] -> Either Error (Node, [Token])
 equality   :: [Token] -> Either Error (Node, [Token])
 relational :: [Token] -> Either Error (Node, [Token])
 add        :: [Token] -> Either Error (Node, [Token])
@@ -35,7 +36,7 @@ join_bin sub bin_ops toks = do
           join (op lhs rhs) ts
         Nothing ->  Right (lhs, toks)
 
-expr       = equality
+expr       = assign
 equality   = join_bin relational [("==", BIN_OP ND_EQ), ("!=", BIN_OP ND_NE)]
 relational = join_bin add
   [
@@ -47,6 +48,14 @@ relational = join_bin add
 
 add        = join_bin mul        [("+", BIN_OP Add), ("-", BIN_OP Sub)]
 mul        = join_bin unary      [("*", BIN_OP Mul), ("/", BIN_OP Div)]
+
+assign toks = do
+  (lhs, ts) <- equality toks
+  if head_equal ts (Punct "=")
+  then do
+    (rhs,tss) <- assign (tail ts)
+    return (BIN_OP Assign lhs rhs, tss)
+  else return (lhs, ts)
 
 
 unary toks@(t:ts)
@@ -64,8 +73,9 @@ skip (t:ts) tok
   | head_equal (t:ts) tok = Right ts
   | otherwise = Left (ErrorToken t ("expected" ++ show tok))
 
--- primay = "(" expr ")" | num
-primary ((Token (Num v) _ _): ts) = Right (NUM v, ts)
+-- primary = "(" expr ")" | ident | num
+primary ((Token (Num v) _ _): ts)     = Right (NUM v, ts)
+primary ((Token (Ident str) _ _): ts) = Right (VAR str, ts)
 
 primary toks@(t:ts)
   | head_equal toks (Punct "(") = do
@@ -74,8 +84,6 @@ primary toks@(t:ts)
       return (node, tsss)
 
   | otherwise = Left (ErrorToken t "expected an expression")
-
-
 
 expr_stmt toks = do
   (node, tss) <- expr toks

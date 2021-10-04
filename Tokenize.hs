@@ -20,7 +20,7 @@ error_at current_input loc text = do
   return 1
 
 error_tok :: String -> Token -> String -> IO (Int)
-error_tok input tok = error_at input (tokenLoc tok)
+error_tok input tok text = error_at input (tokenLoc tok) $ text ++ "\n"  ++ show tok
 
 tokenize :: Int -> String -> [Either (Int, String) Token]
 tokenize c [] = [Right$ Token EOF 0 c]
@@ -41,7 +41,8 @@ tokenize c (p:ps)
     || p == '>' || p == '<'
       =(Right $ Token (Punct [p]) 1 c) : tokenize (c+1) ps
 
-  | isDigit p       = (Right $ Token (Num number) len c) : tokenize (c+len) pss
+  | isDigit p = (Right $ Token (Num number) len c) : tokenize (c+len) pss
+  | isAlpha p = (Right $ Token (Ident [p]) 1 c)    : tokenize (c+1) ps
   | otherwise = [Left (c, "invalid token")]
   where
     (number, pss, x) = strtol 10 (p:ps)

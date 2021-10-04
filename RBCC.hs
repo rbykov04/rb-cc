@@ -5,6 +5,7 @@ module RBCC where
 
 data TokenKind =
   EOF
+  | Ident String
   | Punct String
   | Num Int
   deriving (Eq, Show)
@@ -31,11 +32,13 @@ data BinOp =
   | ND_NE
   | ND_LT
   | ND_LE
+  | Assign
   deriving (Show, Eq)
 data UnOp = Neg deriving (Show, Eq)
 
 data Node =
   NUM Int
+  | VAR String
   | BIN_OP BinOp Node Node
   | UNARY UnOp Node
   | EXPS_STMT [Node]

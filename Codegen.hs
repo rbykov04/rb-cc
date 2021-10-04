@@ -2,6 +2,7 @@ module Codegen where
 import System.IO
 import Text.Printf
 import RBCC
+import Data.Char
 
 push :: Int -> IO (Int)
 push depth = do
@@ -13,22 +14,47 @@ pop depth text= do
   printf "  pop %s\n" text
   return (depth-1)
 
+gen_addr :: Node -> IO ()
+gen_addr (VAR (a:[])) = do
+  let offset = (ord a - ord 'a' +1) * 8
+  printf "  lea %d(%%rbp), %%rax\n" ( - offset)
+
+gen_addr _ = do
+  hPutStrLn stderr "not a value"
+
 gen_expr ::Int -> Node -> IO (Int)
+gen_expr depth node@(VAR _) = do
+  gen_addr node
+  printf "  mov (%%rax), %%rax\n"
+  return depth
+
+gen_expr depth (BIN_OP Assign lhs rhs) = do
+  gen_addr lhs
+  depth <- push depth
+  depth <- gen_expr depth rhs
+  depth <- pop depth "%rdi"
+  printf "  mov %%rax, (%%rdi)\n"
+  return depth
+
 gen_expr depth (NUM a) = do
   printf "  mov $%d, %%rax\n" a
   return depth
 
 gen_expr depth (UNARY Neg a) = do
-  gen_expr depth a
+  depth <- gen_expr depth a
   printf "  neg %%rax\n"
   return depth
 
 gen_expr depth (BIN_OP op lhs rhs) = do
-  gen_expr depth rhs
+  depth <- gen_expr depth rhs
   depth <- push depth
-  gen_expr depth lhs
+  depth <- gen_expr depth lhs
   depth <- pop depth "%rdi"
   gen_bin_op op
+  return depth
+
+gen_expr depth _ = do
+  hPutStrLn stderr "invalid expression"
   return depth
 
 gen_stmt :: Node -> IO (Int)
@@ -78,7 +104,13 @@ codegen ::Node -> IO (Int)
 codegen node = do
   printf "  .globl main\n"
   printf "main:\n"
+  -- Prologue
+  printf "  push %%rbp\n"
+  printf "  mov %%rsp, %%rbp\n"
+  printf "  sub $208, %%rsp\n"
   -- Traverse the AST to emit assembly
   _ <- gen_stmt  node
+  printf "  mov %%rbp, %%rsp\n"
+  printf "  pop %%rbp\n"
   printf("  ret\n");
   return 0
