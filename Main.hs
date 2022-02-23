@@ -21,4 +21,4 @@ main = do
         let parse_res = parse toks
         case parse_res of
           Left err -> printError p err
-          Right (node, _) -> codegen node
+          Right (func, _) -> codegen func

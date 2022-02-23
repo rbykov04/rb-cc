@@ -38,8 +38,20 @@ data UnOp = Neg deriving (Show, Eq)
 
 data Node =
   NUM Int
-  | VAR String
+  | VAR Obj
   | BIN_OP BinOp Node Node
   | UNARY UnOp Node
   | EXPS_STMT [Node]
+  deriving (Show, Eq)
+
+data Obj = Obj
+    String -- name
+    Int    -- offset from RBP
+    deriving (Show, Eq)
+
+data Function = Function {
+    functionBody      :: [Node],
+    functionLocals    :: [Obj],
+    functionStackSize :: Int
+  }
   deriving (Show, Eq)

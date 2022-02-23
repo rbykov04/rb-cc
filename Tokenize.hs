@@ -22,6 +22,20 @@ error_at current_input loc text = do
 error_tok :: String -> Token -> String -> IO (Int)
 error_tok input tok text = error_at input (tokenLoc tok) $ text ++ "\n"  ++ show tok
 
+isIdent1 :: Char -> Bool
+isIdent1 c = isAlpha c || c == '_'
+
+isIdent2 :: Char -> Bool
+isIdent2 c = isIdent1 c || isDigit c
+
+readWord :: String -> (String, String, Int)
+readWord = helper "" 0 where
+  helper res len [] = (res,[], len)
+  helper res len (x:xs)
+    | isIdent2 x = helper (res ++ [x]) (len+1) xs
+    | otherwise = (res, x:xs, len)
+
+
 tokenize :: Int -> String -> [Either (Int, String) Token]
 tokenize c [] = [Right$ Token EOF 0 c]
 tokenize c (p:ps)
@@ -42,11 +56,12 @@ tokenize c (p:ps)
       =(Right $ Token (Punct [p]) 1 c) : tokenize (c+1) ps
 
   | isDigit p = (Right $ Token (Num number) len c) : tokenize (c+len) pss
-  | isAlpha p = (Right $ Token (Ident [p]) 1 c)    : tokenize (c+1) ps
+  | isIdent1 p = (Right $ Token (Ident (p:word_)) (1+wordLen) c) : tokenize (c+wordLen+1) wordTail
   | otherwise = [Left (c, "invalid token")]
   where
     (number, pss, x) = strtol 10 (p:ps)
     len = 10 - x
+    (word_, wordTail, wordLen) = readWord ps
 
 get_number :: String -> Token -> IO (Maybe Int)
 get_number input (Token (Num v) _ _) = return (Just v)

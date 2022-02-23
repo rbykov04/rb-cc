@@ -1,19 +1,12 @@
 module Parse where
+import Control.Monad.Trans.Except
+import Control.Monad.State
 import System.Environment
 import System.IO
 import RBCC
 import Codegen
 import Tokenize
-
-expr       :: [Token] -> Either Error (Node, [Token])
-expr_stmt  :: [Token] -> Either Error (Node, [Token])
-assign     :: [Token] -> Either Error (Node, [Token])
-equality   :: [Token] -> Either Error (Node, [Token])
-relational :: [Token] -> Either Error (Node, [Token])
-add        :: [Token] -> Either Error (Node, [Token])
-mul        :: [Token] -> Either Error (Node, [Token])
-unary      :: [Token] -> Either Error (Node, [Token])
-primary    :: [Token] -> Either Error (Node, [Token])
+import Data.List
 
 head_equal :: [Token] -> TokenKind -> Bool
 head_equal ((Token (Punct a) _ _) : _) (Punct b) = a == b
@@ -25,18 +18,66 @@ head_equal _ _ = False
 
 toPunct (str, op) = (Punct str, op)
 
-join_bin sub bin_ops toks = do
-  (node, ts) <- sub toks
-  join node ts
-  where
-    join lhs toks = (apply_binary . tokenKind . head) toks where
-      apply_binary t = case lookup t (map toPunct bin_ops) of
-        Just op -> do
-          (rhs,ts) <- sub (tail toks)
-          join (op lhs rhs) ts
-        Nothing ->  Right (lhs, toks)
+type ParserState = ([Token], [Obj])
 
-expr       = assign
+join_bin ::
+   ExceptT Error (State ParserState) Node
+   -> [(String, (Node -> Node -> Node))]
+   -> ExceptT Error (State ParserState) Node
+
+
+getTokens :: ExceptT Error (State ParserState) [Token]
+getTokens = do
+  r <- get
+  return $ fst r
+
+putTokens :: [Token] -> ExceptT Error (State ParserState) ()
+putTokens toks = do
+  r <- get
+  put (toks, snd r)
+
+
+getLocals :: ExceptT Error (State ParserState) [Obj]
+getLocals = do
+  r <- get
+  return $ snd r
+
+putLocals :: [Obj] -> ExceptT Error (State ParserState) ()
+putLocals vars = do
+  r <- get
+  put (fst r, vars)
+
+
+
+join_bin sub bin_ops = do
+  node <- sub
+  join_ node
+  where
+    join_ lhs = do
+      toks <- getTokens
+      let tokKind = (tokenKind . head) toks
+      case lookup tokKind (map toPunct bin_ops) of
+        Just op -> do
+          l <- getTokens
+          putTokens (tail l)
+          rhs <- sub
+          join_ (op lhs rhs)
+        Nothing ->  return lhs
+
+
+stmt       :: ExceptT Error (State ParserState) Node
+expr_stmt  :: ExceptT Error (State ParserState) Node
+primary    :: ExceptT Error (State ParserState) Node
+unary      :: ExceptT Error (State ParserState) Node
+assign     :: ExceptT Error (State ParserState) Node
+expr       :: ExceptT Error (State ParserState) Node
+
+equality   :: ExceptT Error (State ParserState) Node
+relational :: ExceptT Error (State ParserState) Node
+add        :: ExceptT Error (State ParserState) Node
+mul        :: ExceptT Error (State ParserState) Node
+
+
 equality   = join_bin relational [("==", BIN_OP ND_EQ), ("!=", BIN_OP ND_NE)]
 relational = join_bin add
   [
@@ -49,61 +90,109 @@ relational = join_bin add
 add        = join_bin mul        [("+", BIN_OP Add), ("-", BIN_OP Sub)]
 mul        = join_bin unary      [("*", BIN_OP Mul), ("/", BIN_OP Div)]
 
-assign toks = do
-  (lhs, ts) <- equality toks
+assign = do
+  lhs <- equality
+  ts <- getTokens
   if head_equal ts (Punct "=")
   then do
-    (rhs,tss) <- assign (tail ts)
-    return (BIN_OP Assign lhs rhs, tss)
-  else return (lhs, ts)
+    putTokens (tail ts)
+    rhs <- assign
+    return $ BIN_OP Assign lhs rhs
+  else return lhs
+
+expr       = assign
+unary = do
+  toks@(t: ts) <- getTokens
+  if head_equal toks (Punct "+")
+  then do
+    putTokens ts
+    unary
+  else if head_equal toks (Punct "-")
+  then do
+      putTokens ts
+      node <- unary
+      return $ UNARY Neg node
+
+  else primary
 
 
-unary toks@(t:ts)
-  | head_equal toks (Punct "+") = unary ts
+find_var :: String -> ExceptT Error (State ParserState) (Maybe Obj)
+find_var var = do
+  vars <- getLocals
+  return (find f vars) where
+    f (Obj name _) = var == name
 
-  | head_equal toks (Punct "-") = do
-      (node,tss) <- unary ts
-      return (UNARY Neg node, tss)
+new_lvar :: String -> ExceptT Error (State ParserState) Obj
+new_lvar name = do
+  vars <- getLocals
+  let v = Obj name 0
+  putLocals (v:vars)
+  return v
 
-  | otherwise = primary toks
-
-
-skip :: [Token] -> TokenKind -> Either Error [Token]
-skip (t:ts) tok
-  | head_equal (t:ts) tok = Right ts
-  | otherwise = Left (ErrorToken t ("expected" ++ show tok))
-
+  
 -- primary = "(" expr ")" | ident | num
-primary ((Token (Num v) _ _): ts)     = Right (NUM v, ts)
-primary ((Token (Ident str) _ _): ts) = Right (VAR str, ts)
+primary = do
+  (t: ts) <- getTokens
+  putTokens ts
+  case t of
+    (Token (Num v) _ _) -> do
+       return $ NUM v
+    (Token (Ident str) _ _) -> do
+      fv <- find_var str
+      case fv of
+        Nothing -> do
+          var <- new_lvar str
+          return (VAR var)
+        Just var -> return (VAR var)
+    (Token (Punct "(") _ _) -> do
+      node <- expr
+      skip (Punct ")")
+      return node
+    _ -> throwE (ErrorToken t "expected an expression")
 
-primary toks@(t:ts)
-  | head_equal toks (Punct "(") = do
-      (node, tss) <- expr ts
-      tsss <- skip tss (Punct ")")
-      return (node, tsss)
 
-  | otherwise = Left (ErrorToken t "expected an expression")
+skip :: TokenKind -> ExceptT Error (State ParserState) ()
+skip tok = do
+  (t:ts) <- getTokens
+  if head_equal (t:ts) tok
+  then do
+    putTokens ts
+    return ()
+  else throwE (ErrorToken t ("expected" ++ show tok))
 
-expr_stmt toks = do
-  (node, tss) <- expr toks
-  tsss <- skip tss (Punct ";")
-  return (EXPS_STMT [node], tsss)
+expr_stmt = do
+  node <- expr
+  skip (Punct ";")
+  return (EXPS_STMT [node])
+
 
 stmt  = expr_stmt
 
-program :: [Token] -> Either Error (Node, [Token])
-program toks = do
-  (EXPS_STMT node, ts) <- stmt toks
+program :: ExceptT Error (State ParserState) Node
+program = do
+  EXPS_STMT node <- stmt
+  ts <- getTokens
   if not $ head_equal ts EOF
   then do
-    (EXPS_STMT nodes, tss) <- program ts
-    return (EXPS_STMT (node ++ nodes), tss)
-  else return (EXPS_STMT node, ts)
+    EXPS_STMT nodes <- program
+    return (EXPS_STMT (node ++ nodes))
+  else return (EXPS_STMT node)
 
-parse :: [Token] -> Either Error (Node, [Token])
-parse toks = do
-  (node, ts) <- program toks
+
+
+parseS :: ExceptT Error (State ParserState) Function
+parseS = do
+  node <- program
+  ts <- getTokens
+  locals <- getLocals
+
   if not $ head_equal ts EOF
-  then Left (ErrorToken (head ts) "extra token")
-  else return (node, ts)
+  then throwE (ErrorToken (head ts) "extra token")
+  else return (Function [node] locals 208)
+
+parse :: [Token] -> Either Error (Function, [Token])
+parse toks = do
+  let (r,s') = runState (runExceptT parseS) (toks, [])
+  case r of
+    Left e -> Left e
+    Right out -> return (out, fst s')

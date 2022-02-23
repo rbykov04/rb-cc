@@ -3,6 +3,7 @@ import System.IO
 import Text.Printf
 import RBCC
 import Data.Char
+import Data.List
 
 push :: Int -> IO (Int)
 push depth = do
@@ -14,58 +15,63 @@ pop depth text= do
   printf "  pop %s\n" text
   return (depth-1)
 
-gen_addr :: Node -> IO ()
-gen_addr (VAR (a:[])) = do
-  let offset = (ord a - ord 'a' +1) * 8
-  printf "  lea %d(%%rbp), %%rax\n" ( - offset)
+gen_addr :: Node ->[Obj] -> IO ()
+gen_addr (VAR (Obj var _)) locals = do
+  case find f locals of
+    Nothing -> do
+      hPutStrLn stderr $ "Codegen: variable " ++ var ++ " is not declare"
+    Just (Obj _ offset ) -> do
+      printf "  lea %d(%%rbp), %%rax\n" offset
+    where
+      f (Obj name _) = var == name
 
-gen_addr _ = do
+gen_addr _ _ = do
   hPutStrLn stderr "not a value"
 
-gen_expr ::Int -> Node -> IO (Int)
-gen_expr depth node@(VAR _) = do
-  gen_addr node
+gen_expr ::Int -> Node ->[Obj]-> IO (Int)
+gen_expr depth node@(VAR _) locals= do
+  gen_addr node locals
   printf "  mov (%%rax), %%rax\n"
   return depth
 
-gen_expr depth (BIN_OP Assign lhs rhs) = do
-  gen_addr lhs
+gen_expr depth (BIN_OP Assign lhs rhs) locals = do
+  gen_addr lhs locals
   depth <- push depth
-  depth <- gen_expr depth rhs
+  depth <- gen_expr depth rhs locals
   depth <- pop depth "%rdi"
   printf "  mov %%rax, (%%rdi)\n"
   return depth
 
-gen_expr depth (NUM a) = do
+gen_expr depth (NUM a) locals = do
   printf "  mov $%d, %%rax\n" a
   return depth
 
-gen_expr depth (UNARY Neg a) = do
-  depth <- gen_expr depth a
+gen_expr depth (UNARY Neg a) locals = do
+  depth <- gen_expr depth a locals
   printf "  neg %%rax\n"
   return depth
 
-gen_expr depth (BIN_OP op lhs rhs) = do
-  depth <- gen_expr depth rhs
+gen_expr depth (BIN_OP op lhs rhs) locals = do
+  depth <- gen_expr depth rhs locals
   depth <- push depth
-  depth <- gen_expr depth lhs
+  depth <- gen_expr depth lhs locals
   depth <- pop depth "%rdi"
   gen_bin_op op
   return depth
 
-gen_expr depth _ = do
+gen_expr depth _ _= do
   hPutStrLn stderr "invalid expression"
   return depth
 
-gen_stmt :: Node -> IO (Int)
-gen_stmt (EXPS_STMT []) = do return 0
+gen_stmt :: Node -> [Obj] -> IO (Int)
+gen_stmt (EXPS_STMT []) _ = do return 0
 
-gen_stmt (EXPS_STMT (n:ns)) = do
-  depth <- gen_expr 0 n
+gen_stmt (EXPS_STMT (n:ns)) locals = do
+  depth <- gen_expr 0 n locals
   let _ = assert (depth == 0) 0
-  gen_stmt (EXPS_STMT ns)
+  gen_stmt (EXPS_STMT ns) locals
 
-gen_stmt _ = do
+gen_stmt _ _= do
   hPutStrLn stderr "invalid statement"
   return 1
 
@@ -99,17 +105,36 @@ assert :: Bool -> a -> a
 assert False _ = error "assertion failed!"
 assert _     x = x
 
+-- Round up `n` to the nearest multiple of `align`. For instance,
+-- align_to 5 8  returns 8 and align_to 11  8  returns 16.
+align_to :: Int -> Int -> Int
+align_to n align = ((n + align - 1) `div` align) * align
 
-codegen ::Node -> IO (Int)
-codegen node = do
+
+assign_lvar_offset :: Function -> Function
+assign_lvar_offset (Function node vars _) = Function node vars' (align_to offset' 16)
+  where
+    (vars', offset') = f vars 0
+    f [] r = ([], r)
+    f ((Obj name _):vs) offset = ((Obj name (0 - offset)) : vs', offset'') where
+      (vs', offset'') = f vs (offset + 8)
+
+
+
+codegen :: Function -> IO (Int)
+codegen f = do
+  let f' = assign_lvar_offset f
+  let locals = functionLocals f'
+  let node = functionBody f'
+  let stack_size = functionStackSize f'
   printf "  .globl main\n"
   printf "main:\n"
   -- Prologue
   printf "  push %%rbp\n"
   printf "  mov %%rsp, %%rbp\n"
-  printf "  sub $208, %%rsp\n"
+  printf "  sub $%d, %%rsp\n" stack_size
   -- Traverse the AST to emit assembly
-  _ <- gen_stmt  node
+  _ <- gen_stmt  (head node) locals
   printf "  mov %%rbp, %%rsp\n"
   printf "  pop %%rbp\n"
   printf("  ret\n");
