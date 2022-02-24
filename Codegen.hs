@@ -59,8 +59,8 @@ gen_expr depth (BIN_OP op lhs rhs) locals = do
   gen_bin_op op
   return depth
 
-gen_expr depth _ _= do
-  hPutStrLn stderr "invalid expression"
+gen_expr depth t _= do
+  hPutStrLn stderr $ "invalid expression" ++ show t
   return depth
 
 gen_stmt :: Node -> [Obj] -> IO (Int)
@@ -71,8 +71,13 @@ gen_stmt (EXPS_STMT (n:ns)) locals = do
   let _ = assert (depth == 0) 0
   gen_stmt (EXPS_STMT ns) locals
 
-gen_stmt _ _= do
-  hPutStrLn stderr "invalid statement"
+gen_stmt (UNARY Return node) locals = do
+    r <- gen_expr 0 node locals
+    printf "  jmp .L.return\n"
+    return r
+
+gen_stmt t _= do
+  hPutStrLn stderr $ "gen stmt: invalid statement " ++ show t
   return 1
 
 
@@ -121,11 +126,18 @@ assign_lvar_offset (Function node vars _) = Function node vars' (align_to offset
 
 
 
+gen_block :: [Node] -> [Obj] -> IO (Int)
+gen_block [] _ = return 0
+gen_block (n:ns) l = do
+  _ <- gen_stmt n l
+  gen_block ns l
+
+
 codegen :: Function -> IO (Int)
 codegen f = do
   let f' = assign_lvar_offset f
   let locals = functionLocals f'
-  let node = functionBody f'
+  let body = functionBody f'
   let stack_size = functionStackSize f'
   printf "  .globl main\n"
   printf "main:\n"
@@ -134,7 +146,9 @@ codegen f = do
   printf "  mov %%rsp, %%rbp\n"
   printf "  sub $%d, %%rsp\n" stack_size
   -- Traverse the AST to emit assembly
-  _ <- gen_stmt  (head node) locals
+  _ <- gen_block  body locals
+
+  printf ".L.return:\n"
   printf "  mov %%rbp, %%rsp\n"
   printf "  pop %%rbp\n"
   printf("  ret\n");

@@ -18,7 +18,7 @@ main = do
       Left (loc, text) -> do
         error_at p loc text
       Right toks -> do
-        let parse_res = parse toks
+        let parse_res = (parse . convert_keywords) toks
         case parse_res of
           Left err -> printError p err
           Right (func, _) -> codegen func

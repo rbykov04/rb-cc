@@ -5,9 +5,10 @@ module RBCC where
 
 data TokenKind =
   EOF
-  | Ident String
-  | Punct String
-  | Num Int
+  | Ident String   -- Identifiers
+  | Punct String   -- Punctuators
+  | Num Int        -- Numeric Literals
+  | Keyword String -- Keywords
   deriving (Eq, Show)
 
 data Token = Token
@@ -25,16 +26,20 @@ data Token = Token
 data Error = ErrorCode Int | ErrorText String | ErrorToken Token String deriving Show
 data BinOp =
   Add
-  | Sub
-  | Mul
-  | Div
-  | ND_EQ
-  | ND_NE
-  | ND_LT
-  | ND_LE
-  | Assign
+  | Sub      -- -
+  | Mul      -- *
+  | Div      -- /
+  | ND_EQ    -- ==
+  | ND_NE    -- !=
+  | ND_LT    -- <
+  | ND_LE    -- <=
+  | Assign   -- =
   deriving (Show, Eq)
-data UnOp = Neg deriving (Show, Eq)
+
+data UnOp =
+  Neg        -- unary -
+  | Return   -- "return"
+   deriving (Show, Eq)
 
 data Node =
   NUM Int

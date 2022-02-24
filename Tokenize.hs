@@ -56,6 +56,7 @@ tokenize c (p:ps)
       =(Right $ Token (Punct [p]) 1 c) : tokenize (c+1) ps
 
   | isDigit p = (Right $ Token (Num number) len c) : tokenize (c+len) pss
+  -- Identifier or keyword
   | isIdent1 p = (Right $ Token (Ident (p:word_)) (1+wordLen) c) : tokenize (c+wordLen+1) wordTail
   | otherwise = [Left (c, "invalid token")]
   where
@@ -74,3 +75,9 @@ printError input (ErrorToken t text) = do
   error_tok input t text
 
 
+convert_keywords :: [Token] -> [Token]
+convert_keywords [] = []
+convert_keywords (tok@(Token (Ident name) a b): toks)
+  | name == "return" = (Token (Keyword name) a b): convert_keywords toks
+  | otherwise = tok: convert_keywords toks
+convert_keywords (tok: toks) = tok: convert_keywords toks

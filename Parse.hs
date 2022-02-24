@@ -10,10 +10,12 @@ import Data.List
 
 head_equal :: [Token] -> TokenKind -> Bool
 head_equal ((Token (Punct a) _ _) : _) (Punct b) = a == b
+head_equal ((Token (Keyword a) _ _) : _) (Keyword b) = a == b
 head_equal ((Token EOF _ _) : _) EOF = True
 head_equal [] _ = False
-head_equal _ (Num x) = False
-head_equal _ (Punct b) = False
+head_equal _ (Num _) = False
+head_equal _ (Punct _) = False
+head_equal _ (Keyword _) = False
 head_equal _ _ = False
 
 toPunct (str, op) = (Punct str, op)
@@ -165,30 +167,39 @@ expr_stmt = do
   skip (Punct ";")
   return (EXPS_STMT [node])
 
-
-stmt  = expr_stmt
-
-program :: ExceptT Error (State ParserState) Node
-program = do
-  EXPS_STMT node <- stmt
+--stmt = "return" expr ";"
+--     | expr-stmt
+stmt  = do
   ts <- getTokens
-  if not $ head_equal ts EOF
+  if head_equal ts (Keyword "return")
   then do
-    EXPS_STMT nodes <- program
-    return (EXPS_STMT (node ++ nodes))
-  else return (EXPS_STMT node)
+    putTokens (tail ts)
+    node <-expr
+    skip (Punct ";")
+    return (UNARY Return node)
+  else expr_stmt
+
+program :: ExceptT Error (State ParserState) [Node]
+program = do
+  ts <- getTokens
+  if head_equal ts EOF
+  then return []
+  else do
+    n <- stmt
+    ns <- program
+    return $ n:ns
 
 
 
 parseS :: ExceptT Error (State ParserState) Function
 parseS = do
-  node <- program
+  nodes <- program
   ts <- getTokens
   locals <- getLocals
 
   if not $ head_equal ts EOF
   then throwE (ErrorToken (head ts) "extra token")
-  else return (Function [node] locals 208)
+  else return (Function nodes locals 208)
 
 parse :: [Token] -> Either Error (Function, [Token])
 parse toks = do
