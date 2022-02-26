@@ -35,5 +35,4 @@ main = do
               printProgram prog
               return 0
             Left e -> do
-              hPutStrLn stderr $ "Codegen: " ++ e
-              return (-1)
+              printError p e

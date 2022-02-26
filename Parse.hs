@@ -30,8 +30,12 @@ popHeadToken = do
   putTokens ts
   return h
 
+seeHeadToken :: ExceptT Error (State ParserState) Token
+seeHeadToken = do
+  (h:_) <- getTokens
+  return h
 
-toPunct (str, op) = (Punct str, op)
+
 
 type ParserState = ([Token], [Obj])
 
@@ -48,11 +52,6 @@ relational    :: ExceptT Error (State ParserState) Node
 add           :: ExceptT Error (State ParserState) Node
 mul           :: ExceptT Error (State ParserState) Node
 
-
-join_bin ::
-   ExceptT Error (State ParserState) Node
-   -> [(String, (Node -> Node -> Node))]
-   -> ExceptT Error (State ParserState) Node
 
 
 getTokens :: ExceptT Error (State ParserState) [Token]
@@ -76,7 +75,10 @@ putLocals vars = do
   r <- get
   put (fst r, vars)
 
-
+join_bin ::
+   ExceptT Error (State ParserState) Node
+   -> [(String, (Node -> Node -> Node_))]
+   -> ExceptT Error (State ParserState) Node
 
 join_bin sub bin_ops = do
   node <- sub
@@ -87,13 +89,13 @@ join_bin sub bin_ops = do
       let tokKind = (tokenKind . head) toks
       case lookup tokKind (map toPunct bin_ops) of
         Just op -> do
-          l <- getTokens
-          putTokens (tail l)
+          tok <- popHeadToken
           rhs <- sub
-          join_ (op lhs rhs)
+          join_ (Node (op lhs rhs) tok)
         Nothing ->  return lhs
 
 
+toPunct (str, op) = (Punct str, op)
 
 equality   = join_bin relational [("==", BIN_OP ND_EQ), ("!=", BIN_OP ND_NE)]
 relational = join_bin add
@@ -112,9 +114,9 @@ assign = do
   ts <- getTokens
   if head_equal ts (Punct "=")
   then do
-    putTokens (tail ts)
+    tok <- popHeadToken
     rhs <- assign
-    return $ BIN_OP Assign lhs rhs
+    return $ Node (BIN_OP Assign lhs rhs) tok
   else return lhs
 
 expr       = assign
@@ -122,13 +124,13 @@ unary = do
   toks@(t: ts) <- getTokens
   if head_equal toks (Punct "+")
   then do
-    putTokens ts
+    _ <- popHeadToken
     unary
   else if head_equal toks (Punct "-")
   then do
-      putTokens ts
+      tok <- popHeadToken
       node <- unary
-      return $ UNARY Neg node
+      return $ Node (UNARY Neg node) tok
 
   else primary
 
@@ -153,14 +155,14 @@ primary = do
   putTokens ts
   case t of
     (Token (Num v) _ _) -> do
-       return $ NUM v
+       return $ Node (NUM v) t
     (Token (Ident str) _ _) -> do
       fv <- find_var str
       case fv of
         Nothing -> do
           var <- new_lvar str
-          return (VAR var)
-        Just var -> return (VAR var)
+          return $ Node (VAR var) t
+        Just var -> return $ Node (VAR var) t
     (Token (Punct "(") _ _) -> do
       node <- expr
       skip (Punct ")")
@@ -182,17 +184,19 @@ expr_stmt = do
   emptyBlock <- head_equalM (Punct ";")
   if emptyBlock
   then do
-    _ <- popHeadToken
-    return $BLOCK []
+    tok <- popHeadToken
+    return $ Node (BLOCK []) tok
   else do
+    tok <- seeHeadToken
     node <- expr
     skip (Punct ";")
-    return (EXPS_STMT [node])
+    return $ Node (EXPS_STMT [node]) tok
 
 
 compound_stmt  = do
+  tok <- seeHeadToken
   nodes <- iter []
-  return $ BLOCK nodes
+  return $ Node (BLOCK nodes) tok
   where
     iter nodes = do
       endBlock <- head_equalM (Punct "}")
@@ -223,21 +227,21 @@ stmt  = do
   ts <- getTokens
   if head_equal ts (Keyword "return")
   then do
-    putTokens (tail ts)
+    tok <- popHeadToken
     node <-expr
     skip (Punct ";")
-    return (UNARY Return node)
+    return $ Node (UNARY Return node) tok
   else if head_equal ts (Keyword "while")
   then do
-    _ <- popHeadToken
+    tok <- popHeadToken
     skip (Punct "(")
     cond <- expr
     skip (Punct ")")
     body <- stmt
-    return (FOR Nothing (Just cond) Nothing body)
+    return $ Node (FOR Nothing (Just cond) Nothing body) tok
   else if head_equal ts (Keyword "for")
   then do
-    _ <- popHeadToken
+    tok <- popHeadToken
     skip (Punct "(")
 
     ini <- expr_stmt
@@ -248,10 +252,10 @@ stmt  = do
     skip (Punct ")")
 
     body <- stmt
-    return (FOR (Just ini) cond inc body)
+    return $ Node (FOR (Just ini) cond inc body) tok
   else if head_equal ts (Keyword "if")
   then do
-    _ <- popHeadToken
+    tok <- popHeadToken
     skip (Punct "(")
     cond <- expr
     skip (Punct ")")
@@ -262,8 +266,8 @@ stmt  = do
     then do
       _ <- popHeadToken
       _else <- stmt
-      return (IF cond _then (Just _else))
-    else return (IF cond _then Nothing)
+      return $ Node (IF cond _then (Just _else)) tok
+    else return $ Node (IF cond _then Nothing) tok
   else if head_equal ts (Punct "{")
   then do
     _ <- popHeadToken

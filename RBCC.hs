@@ -41,7 +41,7 @@ data UnOp =
   | Return   -- "return"
    deriving (Show, Eq)
 
-data Node =
+data Node_ =
   NUM Int
   | VAR Obj
   | BIN_OP BinOp Node Node
@@ -57,6 +57,8 @@ data Node =
 --  FOR init          cond        inc          body
   | FOR (Maybe Node) (Maybe Node) (Maybe Node) Node
   deriving (Show, Eq)
+
+data Node = Node Node_ Token deriving (Show, Eq)
 
 data Obj = Obj
     String -- name

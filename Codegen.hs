@@ -4,7 +4,7 @@ import Data.List
 import Control.Monad.Trans.Except
 import Control.Monad.State
 
-type CodegenError = String
+type CodegenError = Error
 type CodegenState = ([String], Int)
 
 genLine :: String -> ExceptT CodegenError (State CodegenState) ()
@@ -31,15 +31,15 @@ push depth = (depth + 1, ["  push %rax\n"])
 pop :: String -> Int -> (Int, [String])
 pop text depth = (depth - 1, ["  pop "++text ++ "\n"])
 
-gen_addr :: Node ->[Obj] -> Either String [String]
-gen_addr (VAR (Obj var _)) locals =
+gen_addr :: Node ->[Obj] -> Either Error [String]
+gen_addr (Node (VAR (Obj var _)) tok) locals =
   case find f locals of
-    Nothing -> Left $ "variable " ++ var ++ " is not declare"
+    Nothing -> Left $ ErrorToken tok ("variable " ++ var ++ " is not declare")
     Just (Obj _ offset ) ->
       Right $ ["  lea " ++ show offset ++ "(%rbp), %rax\n"]
     where
       f (Obj name _) = var == name
-gen_addr _ _ = Left $ "not a value"
+gen_addr (Node _ tok) _ = Left $ ErrorToken tok "not a value"
 
 convert :: Either CodegenError [String] -> ExceptT CodegenError (State CodegenState) ()
 convert e = do
@@ -56,12 +56,12 @@ convertEx e = do
     Left err -> throwE err
 
 gen_expr ::Int -> Node ->[Obj]-> ExceptT CodegenError (State CodegenState) Int
-gen_expr depth node@(VAR _) locals = do
+gen_expr depth node@(Node (VAR _) tok) locals = do
   convert $ gen_addr node locals
   genLine "  mov (%rax), %rax\n"
   return depth
 
-gen_expr depth (BIN_OP Assign lhs rhs) locals = do
+gen_expr depth (Node (BIN_OP Assign lhs rhs) tok) locals = do
   convert $ gen_addr lhs locals
   depth <- convertEx $ Right $push depth
   depth <- gen_expr depth rhs locals
@@ -69,16 +69,16 @@ gen_expr depth (BIN_OP Assign lhs rhs) locals = do
   genLine "  mov %rax, (%rdi)\n"
   return depth
 
-gen_expr depth (NUM a) _ = do
+gen_expr depth (Node (NUM a) tok) _ = do
   genLine $ "  mov $" ++ show a ++ ", %rax\n"
   return depth
 
-gen_expr depth (UNARY Neg a) locals = do
+gen_expr depth (Node (UNARY Neg a) tok) locals = do
   depth <- gen_expr depth a locals
   genLine "  neg %rax\n"
   return depth
 
-gen_expr depth (BIN_OP op lhs rhs) locals = do
+gen_expr depth (Node (BIN_OP op lhs rhs) tok) locals = do
   depth <- gen_expr depth rhs locals
   depth <- convertEx $ Right $ push depth
   depth <- gen_expr depth lhs locals
@@ -86,17 +86,18 @@ gen_expr depth (BIN_OP op lhs rhs) locals = do
   genLines $gen_bin_op op
   return depth
 
-gen_expr depth t _= throwE $ "invalid expression" ++ show t
+gen_expr depth (Node _ tok) _= throwE $ ErrorToken tok "invalid expression"
+
 
 gen_stmt :: Node -> [Obj] -> ExceptT CodegenError (State CodegenState) ()
-gen_stmt (EXPS_STMT []) _ = return ()
+gen_stmt (Node (EXPS_STMT []) tok) _ = return ()
 
-gen_stmt (EXPS_STMT (n:ns)) locals= do
+gen_stmt (Node (EXPS_STMT (n:ns)) tok) locals= do
   d <- gen_expr 0 n locals
   let _ = assert (d == 0) 0
-  gen_stmt (EXPS_STMT ns) locals
+  gen_stmt (Node (EXPS_STMT ns) tok) locals
 
-gen_stmt (BLOCK nodes) locals =
+gen_stmt (Node (BLOCK nodes) tok) locals =
     iter nodes
     where
       iter [] = return ()
@@ -105,7 +106,7 @@ gen_stmt (BLOCK nodes) locals =
         iter ns
 
 
-gen_stmt (IF cond then_ else_) locals = do
+gen_stmt (Node (IF cond then_ else_) tok) locals = do
   c <- getCount
   _ <- gen_expr 0 cond locals
 
@@ -122,7 +123,7 @@ gen_stmt (IF cond then_ else_) locals = do
     Nothing ->
       genLine $ ".L.end."++ show c ++ ":\n"
 
-gen_stmt (FOR ini cond inc body) locals = do
+gen_stmt (Node (FOR ini cond inc body) tok) locals = do
   c <- getCount
   genInit
   genLine $     ".L.begin." ++ show c ++ ":\n"
@@ -153,12 +154,12 @@ gen_stmt (FOR ini cond inc body) locals = do
 
 
 
-gen_stmt (UNARY Return node) locals = do
+gen_stmt (Node (UNARY Return node) tok) locals = do
   d <- gen_expr 0 node locals
   let _ = assert (d == 0) 0
   genLine "  jmp .L.return\n"
 
-gen_stmt t _ = throwE $ "gen stmt: invalid statement " ++ show t
+gen_stmt (Node _ tok) _ = throwE $ ErrorToken tok ("gen stmt: invalid statement ")
 
 gen_bin_op :: BinOp -> [String]
 gen_bin_op Add =   ["  add %rdi, %rax\n"]
@@ -224,7 +225,7 @@ codegen_ f = do
   genLine "  ret\n"
 
 
-codegen :: Function -> Either String [String]
+codegen :: Function -> Either Error [String]
 codegen f = do
   let (r,s') = runState (runExceptT (codegen_ f)) ([], 1)
   case r of
