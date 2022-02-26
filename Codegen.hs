@@ -154,7 +154,7 @@ gen_stmt (Node (FOR ini cond inc body) tok) locals = do
 
 
 
-gen_stmt (Node (UNARY Return node) tok) locals = do
+gen_stmt (Node (RETURN node) tok) locals = do
   d <- gen_expr 0 node locals
   let _ = assert (d == 0) 0
   genLine "  jmp .L.return\n"

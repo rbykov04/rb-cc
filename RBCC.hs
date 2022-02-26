@@ -38,7 +38,6 @@ data BinOp =
 
 data UnOp =
   Neg        -- unary -
-  | Return   -- "return"
    deriving (Show, Eq)
 
 data Node_ =
@@ -47,6 +46,7 @@ data Node_ =
   | BIN_OP BinOp Node Node
   | UNARY UnOp Node
   | EXPS_STMT [Node]
+  | RETURN Node            -- "return"
   | BLOCK [Node]
 
 -- "if" statement

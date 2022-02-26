@@ -230,7 +230,7 @@ stmt  = do
     tok <- popHeadToken
     node <-expr
     skip (Punct ";")
-    return $ Node (UNARY Return node) tok
+    return $ Node (RETURN node) tok
   else if head_equal ts (Keyword "while")
   then do
     tok <- popHeadToken
