@@ -206,6 +206,7 @@ compound_stmt  = do
 
 
 --stmt = "return" expr ";"
+--     | "if" "(" expr ")" stmt ("else" stmt)?
 --     | "{" compound-stmt
 --     | expr-stmt
 stmt  = do
@@ -216,6 +217,23 @@ stmt  = do
     node <-expr
     skip (Punct ";")
     return (UNARY Return node)
+  else if head_equal ts (Keyword "if")
+  then do
+    _ <- popHeadToken
+    skip (Punct "(")
+    cond <- expr
+    skip (Punct ")")
+    _then <- stmt
+
+    elseBlock <- head_equalM (Keyword "else")
+    if elseBlock
+    then do
+      _ <- popHeadToken
+      _else <- stmt
+      return (IF cond _then (Just _else))
+    else return (IF cond _then Nothing)
+
+
 
   else if head_equal ts (Punct "{")
   then do

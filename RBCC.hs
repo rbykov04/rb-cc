@@ -48,6 +48,10 @@ data Node =
   | UNARY UnOp Node
   | EXPS_STMT [Node]
   | BLOCK [Node]
+
+-- "if" statement
+--  IF cond then else
+  | IF Node Node (Maybe Node)
   deriving (Show, Eq)
 
 data Obj = Obj

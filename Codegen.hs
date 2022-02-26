@@ -5,17 +5,23 @@ import Control.Monad.Trans.Except
 import Control.Monad.State
 
 type CodegenError = String
-type CodegenState = [String]
+type CodegenState = ([String], Int)
 
 genLine :: String -> ExceptT CodegenError (State CodegenState) ()
 genLine prog = do
   r <- get
-  put (r ++ [prog])
+  put (fst r ++ [prog], snd r)
 
 genLines :: [String] -> ExceptT CodegenError (State CodegenState) ()
 genLines prog = do
   r <- get
-  put (r ++ prog)
+  put (fst r ++ prog, snd r)
+
+getCount :: ExceptT CodegenError (State CodegenState) Int
+getCount = do
+  r <- get
+  put (fst r, snd r + 1)
+  return $ snd r
 
 
 push :: Int -> (Int, [String])
@@ -35,13 +41,13 @@ gen_addr (VAR (Obj var _)) locals =
       f (Obj name _) = var == name
 gen_addr _ _ = Left $ "not a value"
 
-convert :: Either CodegenError CodegenState -> ExceptT CodegenError (State CodegenState) ()
+convert :: Either CodegenError [String] -> ExceptT CodegenError (State CodegenState) ()
 convert e = do
   case e of
     Right prog -> genLines prog
     Left err -> throwE err
 
-convertEx :: Either CodegenError (d, CodegenState) -> ExceptT CodegenError (State CodegenState) d
+convertEx :: Either CodegenError (d, [String]) -> ExceptT CodegenError (State CodegenState) d
 convertEx e = do
   case e of
     Right (d, prog) -> do
@@ -97,6 +103,26 @@ gen_stmt (BLOCK nodes) locals =
       iter (n:ns) = do
         gen_stmt n locals
         iter ns
+
+
+gen_stmt (IF cond then_ else_) locals = do
+  c <- getCount
+  _ <- gen_expr 0 cond locals
+
+  genLine       "  cmp $0, %rax\n"
+  genLine $     "  je  .L.else."++ show c ++"\n"
+  gen_stmt then_ locals
+  genLine $     "  jmp .L.end." ++ show c ++ "\n"
+  genLine $     ".L.else." ++ show c++":\n"
+
+  case else_ of
+    Just node -> do
+      gen_stmt node locals
+      genLine $ ".L.end."++ show c ++ ":\n"
+    Nothing ->
+      genLine $ ".L.end."++ show c ++ ":\n"
+
+
 
 gen_stmt (UNARY Return node) locals = do
   d <- gen_expr 0 node locals
@@ -171,7 +197,7 @@ codegen_ f = do
 
 codegen :: Function -> Either String [String]
 codegen f = do
-  let (r,s') = runState (runExceptT (codegen_ f)) []
+  let (r,s') = runState (runExceptT (codegen_ f)) ([], 1)
   case r of
     Left e -> Left e
-    Right _ -> return s'
+    Right _ -> return (fst s')
