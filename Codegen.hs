@@ -122,6 +122,31 @@ gen_stmt (IF cond then_ else_) locals = do
     Nothing ->
       genLine $ ".L.end."++ show c ++ ":\n"
 
+gen_stmt (FOR ini cond inc body) locals = do
+  c <- getCount
+  gen_stmt ini locals
+
+  genLine $     ".L.begin." ++ show c ++ ":\n"
+  genCond c
+  gen_stmt body locals
+  genInc
+  genLine $ "  jmp .L.begin." ++ show c ++ "\n"
+  genLine $ ".L.end." ++ show c ++ ":\n"
+  where
+    genCond c = do
+      case cond of
+        Nothing -> return ()
+        Just node -> do
+          _ <- gen_expr 0 node locals
+          genLine $ "  cmp $0, %rax\n"
+          genLine $ "  je  .L.end." ++ show c ++"\n"
+    genInc = do
+      case inc of
+        Nothing -> return ()
+        Just node -> do
+          _ <- gen_expr 0 node locals
+          return ()
+
 
 
 gen_stmt (UNARY Return node) locals = do

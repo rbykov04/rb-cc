@@ -204,9 +204,18 @@ compound_stmt  = do
         node <- stmt
         iter (nodes ++ [node])
 
+maybe_expr :: TokenKind -> ExceptT Error (State ParserState) (Maybe Node)
+maybe_expr tk = do
+  isNotExpr <- head_equalM tk
+  if isNotExpr
+  then return Nothing
+  else do
+    node <- expr
+    return $ Just node
 
 --stmt = "return" expr ";"
 --     | "if" "(" expr ")" stmt ("else" stmt)?
+--     | "for" "(" expr-stmt expr? ";" expr? ")" stmt
 --     | "{" compound-stmt
 --     | expr-stmt
 stmt  = do
@@ -217,6 +226,20 @@ stmt  = do
     node <-expr
     skip (Punct ";")
     return (UNARY Return node)
+  else if head_equal ts (Keyword "for")
+  then do
+    _ <- popHeadToken
+    skip (Punct "(")
+
+    ini <- expr_stmt
+    cond <- maybe_expr (Punct ";")
+    skip (Punct ";")
+
+    inc<- maybe_expr (Punct ")")
+    skip (Punct ")")
+
+    body <- stmt
+    return (FOR ini cond inc body)
   else if head_equal ts (Keyword "if")
   then do
     _ <- popHeadToken
@@ -232,9 +255,6 @@ stmt  = do
       _else <- stmt
       return (IF cond _then (Just _else))
     else return (IF cond _then Nothing)
-
-
-
   else if head_equal ts (Punct "{")
   then do
     _ <- popHeadToken
