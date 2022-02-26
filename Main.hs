@@ -10,7 +10,7 @@ main = do
   args <- getArgs
   if length args < 1 then do
     hPutStrLn stderr "rb-cc: invalid number of arguments"
-    return 1
+    return (-1)
   else do
     let p = head args
     let res = sequence $ tokenize 0 p
@@ -21,4 +21,11 @@ main = do
         let parse_res = (parse . convert_keywords) toks
         case parse_res of
           Left err -> printError p err
-          Right (func, _) -> codegen func
+          Right (func, _) ->
+            case codegen func of
+            Right prog -> do
+              printProgram prog
+              return 0
+            Left e -> do
+              hPutStrLn stderr $ "Codegen: " ++ e
+              return (-1)
