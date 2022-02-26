@@ -56,4 +56,14 @@ assert 6 '{ a=b=3; return a + b; }'
 assert 3 '{ foo=3; return foo; }'
 assert 8 '{ foo123=3; bar=5; return foo123+bar; }'
 
+assert 1 '{ return 1; 2; 3; }'
+assert 2 '{ 1; return 2; 3; }'
+assert 2 '{ 1; return 2; 3; }'
+assert 3 '{ 1; 2; return 3; }'
+assert 3 '{ 1; 2; return 3; }'
+
+
+assert 3 '{ {1; {2;} return 3;} }'
+assert 3 '{ {1; {2;} return 3;} }'
+assert 5 '{ ;;; return 5; }'
 echo OK

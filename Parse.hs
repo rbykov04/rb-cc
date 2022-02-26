@@ -177,10 +177,17 @@ skip tok = do
     return ()
   else throwE (ErrorToken t ("expected" ++ show tok))
 
+-- expr-stmt = expr? ";"
 expr_stmt = do
-  node <- expr
-  skip (Punct ";")
-  return (EXPS_STMT [node])
+  emptyBlock <- head_equalM (Punct ";")
+  if emptyBlock
+  then do
+    _ <- popHeadToken
+    return $BLOCK []
+  else do
+    node <- expr
+    skip (Punct ";")
+    return (EXPS_STMT [node])
 
 
 compound_stmt  = do
