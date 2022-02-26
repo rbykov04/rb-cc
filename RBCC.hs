@@ -52,9 +52,10 @@ data Node =
 -- "if" statement
 --  IF cond then else
   | IF Node Node (Maybe Node)
--- "for" statement
---  FOR init  cond        inc          body
-  | FOR Node (Maybe Node) (Maybe Node) Node
+
+-- "for" or "while" statement
+--  FOR init          cond        inc          body
+  | FOR (Maybe Node) (Maybe Node) (Maybe Node) Node
   deriving (Show, Eq)
 
 data Obj = Obj

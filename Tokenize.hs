@@ -82,5 +82,6 @@ convert_keywords (tok@(Token (Ident name) a b): toks)
   | name == "if" = (Token (Keyword name) a b): convert_keywords toks
   | name == "else" = (Token (Keyword name) a b): convert_keywords toks
   | name == "for" = (Token (Keyword name) a b): convert_keywords toks
+  | name == "while" = (Token (Keyword name) a b): convert_keywords toks
   | otherwise = tok: convert_keywords toks
 convert_keywords (tok: toks) = tok: convert_keywords toks

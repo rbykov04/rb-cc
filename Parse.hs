@@ -216,6 +216,7 @@ maybe_expr tk = do
 --stmt = "return" expr ";"
 --     | "if" "(" expr ")" stmt ("else" stmt)?
 --     | "for" "(" expr-stmt expr? ";" expr? ")" stmt
+--     | "while" "(" expr" )" stmt
 --     | "{" compound-stmt
 --     | expr-stmt
 stmt  = do
@@ -226,6 +227,14 @@ stmt  = do
     node <-expr
     skip (Punct ";")
     return (UNARY Return node)
+  else if head_equal ts (Keyword "while")
+  then do
+    _ <- popHeadToken
+    skip (Punct "(")
+    cond <- expr
+    skip (Punct ")")
+    body <- stmt
+    return (FOR Nothing (Just cond) Nothing body)
   else if head_equal ts (Keyword "for")
   then do
     _ <- popHeadToken
@@ -239,7 +248,7 @@ stmt  = do
     skip (Punct ")")
 
     body <- stmt
-    return (FOR ini cond inc body)
+    return (FOR (Just ini) cond inc body)
   else if head_equal ts (Keyword "if")
   then do
     _ <- popHeadToken

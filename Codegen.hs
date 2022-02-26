@@ -124,8 +124,7 @@ gen_stmt (IF cond then_ else_) locals = do
 
 gen_stmt (FOR ini cond inc body) locals = do
   c <- getCount
-  gen_stmt ini locals
-
+  genInit
   genLine $     ".L.begin." ++ show c ++ ":\n"
   genCond c
   gen_stmt body locals
@@ -133,6 +132,11 @@ gen_stmt (FOR ini cond inc body) locals = do
   genLine $ "  jmp .L.begin." ++ show c ++ "\n"
   genLine $ ".L.end." ++ show c ++ ":\n"
   where
+    genInit = do
+      case ini of
+        Nothing -> return ()
+        Just node -> do
+          gen_stmt node locals
     genCond c = do
       case cond of
         Nothing -> return ()
