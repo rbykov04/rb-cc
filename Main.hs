@@ -4,6 +4,14 @@ import System.IO
 import Codegen
 import Tokenize
 import Parse
+import Text.Printf
+
+printProgram :: [String] -> IO ()
+printProgram [] = return ()
+printProgram (s:ss) = do
+  printf "%s" s
+  printProgram ss
+
 
 main :: IO (Int)
 main = do
