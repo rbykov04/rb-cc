@@ -71,6 +71,17 @@ gen_stmt (EXPS_STMT (n:ns)) locals = do
   let _ = assert (depth == 0) 0
   gen_stmt (EXPS_STMT ns) locals
 
+gen_stmt (BLOCK nodes) locals = do
+    iter nodes
+    where
+      iter [] = do
+        return 0
+      iter (n:ns) = do
+        _ <- gen_stmt n locals
+        iter ns
+
+
+
 gen_stmt (UNARY Return node) locals = do
     r <- gen_expr 0 node locals
     printf "  jmp .L.return\n"

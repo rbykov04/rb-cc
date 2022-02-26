@@ -18,9 +18,36 @@ head_equal _ (Punct _) = False
 head_equal _ (Keyword _) = False
 head_equal _ _ = False
 
+
+head_equalM :: TokenKind -> ExceptT Error (State ParserState) Bool
+head_equalM token = do
+  ts <- getTokens
+  return $ head_equal ts token
+
+popHeadToken :: ExceptT Error (State ParserState) Token
+popHeadToken = do
+  (h:ts) <- getTokens
+  putTokens ts
+  return h
+
+
 toPunct (str, op) = (Punct str, op)
 
 type ParserState = ([Token], [Obj])
+
+stmt          :: ExceptT Error (State ParserState) Node
+expr_stmt     :: ExceptT Error (State ParserState) Node
+primary       :: ExceptT Error (State ParserState) Node
+unary         :: ExceptT Error (State ParserState) Node
+assign        :: ExceptT Error (State ParserState) Node
+compound_stmt :: ExceptT Error (State ParserState) Node
+expr          :: ExceptT Error (State ParserState) Node
+
+equality      :: ExceptT Error (State ParserState) Node
+relational    :: ExceptT Error (State ParserState) Node
+add           :: ExceptT Error (State ParserState) Node
+mul           :: ExceptT Error (State ParserState) Node
+
 
 join_bin ::
    ExceptT Error (State ParserState) Node
@@ -66,18 +93,6 @@ join_bin sub bin_ops = do
           join_ (op lhs rhs)
         Nothing ->  return lhs
 
-
-stmt       :: ExceptT Error (State ParserState) Node
-expr_stmt  :: ExceptT Error (State ParserState) Node
-primary    :: ExceptT Error (State ParserState) Node
-unary      :: ExceptT Error (State ParserState) Node
-assign     :: ExceptT Error (State ParserState) Node
-expr       :: ExceptT Error (State ParserState) Node
-
-equality   :: ExceptT Error (State ParserState) Node
-relational :: ExceptT Error (State ParserState) Node
-add        :: ExceptT Error (State ParserState) Node
-mul        :: ExceptT Error (State ParserState) Node
 
 
 equality   = join_bin relational [("==", BIN_OP ND_EQ), ("!=", BIN_OP ND_NE)]
@@ -167,7 +182,24 @@ expr_stmt = do
   skip (Punct ";")
   return (EXPS_STMT [node])
 
+
+compound_stmt  = do
+  nodes <- iter []
+  return $ BLOCK nodes
+  where
+    iter nodes = do
+      endBlock <- head_equalM (Punct "}")
+      if endBlock
+      then do
+        _ <- popHeadToken
+        return nodes
+      else do
+        node <- stmt
+        iter (nodes ++ [node])
+
+
 --stmt = "return" expr ";"
+--     | "{" compound-stmt
 --     | expr-stmt
 stmt  = do
   ts <- getTokens
@@ -177,17 +209,18 @@ stmt  = do
     node <-expr
     skip (Punct ";")
     return (UNARY Return node)
+
+  else if head_equal ts (Punct "{")
+  then do
+    _ <- popHeadToken
+    compound_stmt
   else expr_stmt
 
 program :: ExceptT Error (State ParserState) [Node]
 program = do
-  ts <- getTokens
-  if head_equal ts EOF
-  then return []
-  else do
-    n <- stmt
-    ns <- program
-    return $ n:ns
+  skip (Punct "{")
+  ts <- compound_stmt
+  return [ts]
 
 
 

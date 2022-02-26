@@ -47,6 +47,7 @@ data Node =
   | BIN_OP BinOp Node Node
   | UNARY UnOp Node
   | EXPS_STMT [Node]
+  | BLOCK [Node]
   deriving (Show, Eq)
 
 data Obj = Obj
