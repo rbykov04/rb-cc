@@ -38,6 +38,8 @@ data BinOp =
 
 data UnOp =
   Neg        -- unary -
+  | Addr     -- unary &
+  | Deref    -- unary *
    deriving (Show, Eq)
 
 data Node_ =

@@ -31,15 +31,21 @@ push depth = (depth + 1, ["  push %rax\n"])
 pop :: String -> Int -> (Int, [String])
 pop text depth = (depth - 1, ["  pop "++text ++ "\n"])
 
-gen_addr :: Node ->[Obj] -> Either Error [String]
-gen_addr (Node (VAR (Obj var _)) tok) locals =
+
+gen_addr :: Node ->[Obj]-> ExceptT CodegenError (State CodegenState) ()
+gen_addr (Node (VAR (Obj var _)) tok) locals = do
   case find f locals of
-    Nothing -> Left $ ErrorToken tok ("variable " ++ var ++ " is not declare")
-    Just (Obj _ offset ) ->
-      Right $ ["  lea " ++ show offset ++ "(%rbp), %rax\n"]
+    Nothing ->  throwE $ ErrorToken tok ("variable " ++ var ++ " is not declare")
+    Just (Obj _ offset ) -> do
+      genLine $ "  lea " ++ show offset ++ "(%rbp), %rax\n"
     where
       f (Obj name _) = var == name
-gen_addr (Node _ tok) _ = Left $ ErrorToken tok "not a value"
+
+gen_addr (Node (UNARY Deref node) _) locals = do
+  _ <- gen_expr 0 node locals
+  return ()
+
+gen_addr (Node _ tok) _ = throwE $ ErrorToken tok "Codegen: not a value"
 
 convert :: Either CodegenError [String] -> ExceptT CodegenError (State CodegenState) ()
 convert e = do
@@ -57,12 +63,12 @@ convertEx e = do
 
 gen_expr ::Int -> Node ->[Obj]-> ExceptT CodegenError (State CodegenState) Int
 gen_expr depth node@(Node (VAR _) tok) locals = do
-  convert $ gen_addr node locals
+  gen_addr node locals
   genLine "  mov (%rax), %rax\n"
   return depth
 
 gen_expr depth (Node (BIN_OP Assign lhs rhs) tok) locals = do
-  convert $ gen_addr lhs locals
+  gen_addr lhs locals
   depth <- convertEx $ Right $push depth
   depth <- gen_expr depth rhs locals
   depth <- convertEx $ Right $ pop "%rdi" depth
@@ -78,6 +84,15 @@ gen_expr depth (Node (UNARY Neg a) tok) locals = do
   genLine "  neg %rax\n"
   return depth
 
+gen_expr depth (Node (UNARY Addr node) _) locals = do
+  gen_addr node locals
+  return depth
+
+gen_expr depth (Node (UNARY Deref node) _) locals = do
+  depth <- gen_expr depth node locals
+  genLine "  mov (%rax), %rax\n"
+  return depth
+
 gen_expr depth (Node (BIN_OP op lhs rhs) tok) locals = do
   depth <- gen_expr depth rhs locals
   depth <- convertEx $ Right $ push depth
@@ -86,7 +101,7 @@ gen_expr depth (Node (BIN_OP op lhs rhs) tok) locals = do
   genLines $gen_bin_op op
   return depth
 
-gen_expr depth (Node _ tok) _= throwE $ ErrorToken tok "invalid expression"
+gen_expr depth (Node _ tok) _= throwE $ ErrorToken tok "Codegen: invalid expression"
 
 
 gen_stmt :: Node -> [Obj] -> ExceptT CodegenError (State CodegenState) ()

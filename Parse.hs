@@ -120,6 +120,8 @@ assign = do
   else return lhs
 
 expr       = assign
+
+-- unary = ("+" | "-" | "*" | "&") unary
 unary = do
   toks@(t: ts) <- getTokens
   if head_equal toks (Punct "+")
@@ -131,8 +133,17 @@ unary = do
       tok <- popHeadToken
       node <- unary
       return $ Node (UNARY Neg node) tok
-
-  else primary
+  else if head_equal toks (Punct "&")
+  then do
+      tok <- popHeadToken
+      node <- unary
+      return $ Node (UNARY Addr node) tok
+  else if head_equal toks (Punct "*")
+  then do
+      tok <- popHeadToken
+      node <- unary
+      return $ Node (UNARY Deref node) tok
+   else primary
 
 
 find_var :: String -> ExceptT Error (State ParserState) (Maybe Obj)
