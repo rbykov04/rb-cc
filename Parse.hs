@@ -91,7 +91,7 @@ join_bin sub bin_ops = do
         Just op -> do
           tok <- popHeadToken
           rhs <- sub
-          join_ (Node (op lhs rhs) tok)
+          join_ (Node (op lhs rhs) INT tok)
         Nothing ->  return lhs
 
 
@@ -106,18 +106,86 @@ relational = join_bin add
     (">=", flip (BIN_OP ND_LE))
   ]
 
-add        = join_bin mul        [("+", BIN_OP Add), ("-", BIN_OP Sub)]
 mul        = join_bin unary      [("*", BIN_OP Mul), ("/", BIN_OP Div)]
 
+-- In C, `+` operator is overloaded to perform the pointer arithmetic.
+-- If p is a pointer, p+n adds not n but sizeof(*p)*n to the value of p,
+-- so that p+n points to the location n elements (not bytes) ahead of p.
+-- In other words, we need to scale an integer value before adding to a
+-- pointer value. This function takes care of the scaling.
+
+make_offset count tok =  offset where
+  base = Node (NUM 8) INT tok
+  offset = Node (BIN_OP Mul count base) INT tok
+
+new_add  :: Node->Node->Token -> ExceptT Error (State ParserState) Node
+new_add lhs@(Node _ INT _) rhs@(Node _ INT _) tok = do
+  return $ Node (BIN_OP Add lhs rhs) INT tok
+
+new_add lhs@(Node _ (PTR base) _) rhs@(Node _ INT _) tok = do
+  let offset = make_offset rhs tok
+  return $ Node (BIN_OP Add lhs offset) (PTR base) tok
+
+new_add lhs@(Node _ INT _) rhs@(Node _ (PTR base) _) tok = do
+  let offset = make_offset lhs tok
+  return $ Node (BIN_OP Add rhs offset) (PTR base) tok
+
+-- ptr +  ptr
+new_add _ _ t = throwE (ErrorToken t "invalid operands")
+
+new_sub  :: Node->Node->Token -> ExceptT Error (State ParserState) Node
+new_sub lhs@(Node _ INT _) rhs@(Node _ INT _) tok = do
+  return $ Node (BIN_OP Sub lhs rhs) INT tok
+
+-- ptr - num
+new_sub ptr@(Node _ (PTR base) _) count@(Node _ INT _) tok = do
+  let offset = make_offset count tok
+  return $ Node (BIN_OP Sub ptr offset) (PTR base) tok
+
+-- ptr - ptr, which returns how many elements are between the two.
+new_sub lhs@(Node _ (PTR _) _) rhs@(Node _ (PTR _) _) tok = do
+  let base = Node (NUM 8) INT tok
+  let num = Node (BIN_OP Sub lhs rhs) INT tok
+  return $ Node (BIN_OP Div num base) INT tok
+
+-- num - ptr
+new_sub _ _ t = throwE (ErrorToken t "invalid operands")
+
+
+add        = do
+  node <- mul
+  join_ node
+  where
+    join_ lhs = do
+      ts <- getTokens
+      if head_equal ts (Punct "+")
+      then do
+        tok <- popHeadToken
+        rhs <- mul
+        n_ <- new_add lhs rhs tok
+        join_ n_
+      else if head_equal ts (Punct "-")
+      then do
+        tok <- popHeadToken
+        rhs <- mul
+        n_ <- new_sub lhs rhs tok
+        join_ $ n_
+      else
+        return lhs
+
+
+ -- join_bin mul        [("+", BIN_OP Add), ("-", BIN_OP Sub)]
+
 assign = do
-  lhs <- equality
+  lhs@(Node _ lhs_ty _) <- equality
   ts <- getTokens
   if head_equal ts (Punct "=")
   then do
     tok <- popHeadToken
     rhs <- assign
-    return $ Node (BIN_OP Assign lhs rhs) tok
+    return $ Node (BIN_OP Assign lhs rhs) lhs_ty tok
   else return lhs
+
 
 expr       = assign
 
@@ -132,17 +200,19 @@ unary = do
   then do
       tok <- popHeadToken
       node <- unary
-      return $ Node (UNARY Neg node) tok
+      return $ Node (UNARY Neg node) INT tok
   else if head_equal toks (Punct "&")
   then do
       tok <- popHeadToken
-      node <- unary
-      return $ Node (UNARY Addr node) tok
+      node@(Node _ ty _) <- unary
+      return $ Node (UNARY Addr node) (PTR ty) tok
   else if head_equal toks (Punct "*")
   then do
       tok <- popHeadToken
-      node <- unary
-      return $ Node (UNARY Deref node) tok
+      node@(Node _ ty _) <- unary
+      case ty of
+        PTR base -> return $ Node (UNARY Deref node) base tok
+        _        -> return $ Node (UNARY Deref node) INT tok
    else primary
 
 
@@ -166,14 +236,14 @@ primary = do
   putTokens ts
   case t of
     (Token (Num v) _ _) -> do
-       return $ Node (NUM v) t
+       return $ Node (NUM v) INT t
     (Token (Ident str) _ _) -> do
       fv <- find_var str
       case fv of
         Nothing -> do
           var <- new_lvar str
-          return $ Node (VAR var) t
-        Just var -> return $ Node (VAR var) t
+          return $ Node (VAR var) INT t
+        Just var -> return $ Node (VAR var) INT t
     (Token (Punct "(") _ _) -> do
       node <- expr
       skip (Punct ")")
@@ -196,18 +266,18 @@ expr_stmt = do
   if emptyBlock
   then do
     tok <- popHeadToken
-    return $ Node (BLOCK []) tok
+    return $ Node (BLOCK []) INT tok
   else do
     tok <- seeHeadToken
     node <- expr
     skip (Punct ";")
-    return $ Node (EXPS_STMT [node]) tok
+    return $ Node (EXPS_STMT [node]) INT tok
 
 
 compound_stmt  = do
   tok <- seeHeadToken
   nodes <- iter []
-  return $ Node (BLOCK nodes) tok
+  return $ Node (BLOCK nodes) INT tok
   where
     iter nodes = do
       endBlock <- head_equalM (Punct "}")
@@ -241,7 +311,7 @@ stmt  = do
     tok <- popHeadToken
     node <-expr
     skip (Punct ";")
-    return $ Node (RETURN node) tok
+    return $ Node (RETURN node) INT tok
   else if head_equal ts (Keyword "while")
   then do
     tok <- popHeadToken
@@ -249,7 +319,7 @@ stmt  = do
     cond <- expr
     skip (Punct ")")
     body <- stmt
-    return $ Node (FOR Nothing (Just cond) Nothing body) tok
+    return $ Node (FOR Nothing (Just cond) Nothing body) INT tok
   else if head_equal ts (Keyword "for")
   then do
     tok <- popHeadToken
@@ -263,7 +333,7 @@ stmt  = do
     skip (Punct ")")
 
     body <- stmt
-    return $ Node (FOR (Just ini) cond inc body) tok
+    return $ Node (FOR (Just ini) cond inc body) INT tok
   else if head_equal ts (Keyword "if")
   then do
     tok <- popHeadToken
@@ -277,8 +347,8 @@ stmt  = do
     then do
       _ <- popHeadToken
       _else <- stmt
-      return $ Node (IF cond _then (Just _else)) tok
-    else return $ Node (IF cond _then Nothing) tok
+      return $ Node (IF cond _then (Just _else)) INT tok
+    else return $ Node (IF cond _then Nothing) INT tok
   else if head_equal ts (Punct "{")
   then do
     _ <- popHeadToken

@@ -33,7 +33,7 @@ pop text depth = (depth - 1, ["  pop "++text ++ "\n"])
 
 
 gen_addr :: Node ->[Obj]-> ExceptT CodegenError (State CodegenState) ()
-gen_addr (Node (VAR (Obj var _)) tok) locals = do
+gen_addr (Node (VAR (Obj var _ )) _ tok) locals = do
   case find f locals of
     Nothing ->  throwE $ ErrorToken tok ("variable " ++ var ++ " is not declare")
     Just (Obj _ offset ) -> do
@@ -41,11 +41,11 @@ gen_addr (Node (VAR (Obj var _)) tok) locals = do
     where
       f (Obj name _) = var == name
 
-gen_addr (Node (UNARY Deref node) _) locals = do
+gen_addr (Node (UNARY Deref node) _ _) locals = do
   _ <- gen_expr 0 node locals
   return ()
 
-gen_addr (Node _ tok) _ = throwE $ ErrorToken tok "Codegen: not a value"
+gen_addr (Node _ _ tok) _ = throwE $ ErrorToken tok "Codegen: not a value"
 
 convert :: Either CodegenError [String] -> ExceptT CodegenError (State CodegenState) ()
 convert e = do
@@ -62,12 +62,12 @@ convertEx e = do
     Left err -> throwE err
 
 gen_expr ::Int -> Node ->[Obj]-> ExceptT CodegenError (State CodegenState) Int
-gen_expr depth node@(Node (VAR _) tok) locals = do
+gen_expr depth node@(Node (VAR _) _ tok) locals = do
   gen_addr node locals
   genLine "  mov (%rax), %rax\n"
   return depth
 
-gen_expr depth (Node (BIN_OP Assign lhs rhs) tok) locals = do
+gen_expr depth (Node (BIN_OP Assign lhs rhs) _ tok) locals = do
   gen_addr lhs locals
   depth <- convertEx $ Right $push depth
   depth <- gen_expr depth rhs locals
@@ -75,25 +75,25 @@ gen_expr depth (Node (BIN_OP Assign lhs rhs) tok) locals = do
   genLine "  mov %rax, (%rdi)\n"
   return depth
 
-gen_expr depth (Node (NUM a) tok) _ = do
+gen_expr depth (Node (NUM a) _ tok) _ = do
   genLine $ "  mov $" ++ show a ++ ", %rax\n"
   return depth
 
-gen_expr depth (Node (UNARY Neg a) tok) locals = do
+gen_expr depth (Node (UNARY Neg a) _ tok) locals = do
   depth <- gen_expr depth a locals
   genLine "  neg %rax\n"
   return depth
 
-gen_expr depth (Node (UNARY Addr node) _) locals = do
+gen_expr depth (Node (UNARY Addr node) _ _) locals = do
   gen_addr node locals
   return depth
 
-gen_expr depth (Node (UNARY Deref node) _) locals = do
+gen_expr depth (Node (UNARY Deref node) _ _) locals = do
   depth <- gen_expr depth node locals
   genLine "  mov (%rax), %rax\n"
   return depth
 
-gen_expr depth (Node (BIN_OP op lhs rhs) tok) locals = do
+gen_expr depth (Node (BIN_OP op lhs rhs) _ tok) locals = do
   depth <- gen_expr depth rhs locals
   depth <- convertEx $ Right $ push depth
   depth <- gen_expr depth lhs locals
@@ -101,18 +101,18 @@ gen_expr depth (Node (BIN_OP op lhs rhs) tok) locals = do
   genLines $gen_bin_op op
   return depth
 
-gen_expr depth (Node _ tok) _= throwE $ ErrorToken tok "Codegen: invalid expression"
+gen_expr depth (Node _ _ tok) _= throwE $ ErrorToken tok "Codegen: invalid expression"
 
 
 gen_stmt :: Node -> [Obj] -> ExceptT CodegenError (State CodegenState) ()
-gen_stmt (Node (EXPS_STMT []) tok) _ = return ()
+gen_stmt (Node (EXPS_STMT []) _ tok) _ = return ()
 
-gen_stmt (Node (EXPS_STMT (n:ns)) tok) locals= do
+gen_stmt (Node (EXPS_STMT (n:ns)) t tok) locals= do
   d <- gen_expr 0 n locals
   let _ = assert (d == 0) 0
-  gen_stmt (Node (EXPS_STMT ns) tok) locals
+  gen_stmt (Node (EXPS_STMT ns) t tok) locals
 
-gen_stmt (Node (BLOCK nodes) tok) locals =
+gen_stmt (Node (BLOCK nodes) _ tok) locals =
     iter nodes
     where
       iter [] = return ()
@@ -121,7 +121,7 @@ gen_stmt (Node (BLOCK nodes) tok) locals =
         iter ns
 
 
-gen_stmt (Node (IF cond then_ else_) tok) locals = do
+gen_stmt (Node (IF cond then_ else_) _ tok) locals = do
   c <- getCount
   _ <- gen_expr 0 cond locals
 
@@ -138,7 +138,7 @@ gen_stmt (Node (IF cond then_ else_) tok) locals = do
     Nothing ->
       genLine $ ".L.end."++ show c ++ ":\n"
 
-gen_stmt (Node (FOR ini cond inc body) tok) locals = do
+gen_stmt (Node (FOR ini cond inc body) _ tok) locals = do
   c <- getCount
   genInit
   genLine $     ".L.begin." ++ show c ++ ":\n"
@@ -169,12 +169,12 @@ gen_stmt (Node (FOR ini cond inc body) tok) locals = do
 
 
 
-gen_stmt (Node (RETURN node) tok) locals = do
+gen_stmt (Node (RETURN node) _ tok) locals = do
   d <- gen_expr 0 node locals
   let _ = assert (d == 0) 0
   genLine "  jmp .L.return\n"
 
-gen_stmt (Node _ tok) _ = throwE $ ErrorToken tok ("gen stmt: invalid statement ")
+gen_stmt (Node _ _ tok) _ = throwE $ ErrorToken tok ("gen stmt: invalid statement ")
 
 gen_bin_op :: BinOp -> [String]
 gen_bin_op Add =   ["  add %rdi, %rax\n"]

@@ -42,6 +42,11 @@ data UnOp =
   | Deref    -- unary *
    deriving (Show, Eq)
 
+data Type
+  = INT
+  | PTR Type
+  deriving (Show, Eq)
+
 data Node_ =
   NUM Int
   | VAR Obj
@@ -60,7 +65,7 @@ data Node_ =
   | FOR (Maybe Node) (Maybe Node) (Maybe Node) Node
   deriving (Show, Eq)
 
-data Node = Node Node_ Token deriving (Show, Eq)
+data Node = Node Node_ Type Token deriving (Show, Eq)
 
 data Obj = Obj
     String -- name
