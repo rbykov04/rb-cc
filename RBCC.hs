@@ -68,7 +68,8 @@ data Node_ =
 data Node = Node Node_ Type Token deriving (Show, Eq)
 
 data Obj = Obj
-    String -- name
+    String -- variable name
+    Type   -- type
     Int    -- offset from RBP
     deriving (Show, Eq)
 

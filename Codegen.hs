@@ -33,13 +33,13 @@ pop text depth = (depth - 1, ["  pop "++text ++ "\n"])
 
 
 gen_addr :: Node ->[Obj]-> ExceptT CodegenError (State CodegenState) ()
-gen_addr (Node (VAR (Obj var _ )) _ tok) locals = do
+gen_addr (Node (VAR (Obj var _ _)) _ tok) locals = do
   case find f locals of
     Nothing ->  throwE $ ErrorToken tok ("variable " ++ var ++ " is not declare")
-    Just (Obj _ offset ) -> do
+    Just (Obj _ _ offset ) -> do
       genLine $ "  lea " ++ show offset ++ "(%rbp), %rax\n"
     where
-      f (Obj name _) = var == name
+      f (Obj name _ _) = var == name
 
 gen_addr (Node (UNARY Deref node) _ _) locals = do
   _ <- gen_expr 0 node locals
@@ -208,7 +208,7 @@ assign_lvar_offset (Function node vars _) = Function node vars' (align_to offset
   where
     (vars', offset') = f vars 0
     f [] r = ([], r)
-    f ((Obj name _):vs) offset = ((Obj name (0 - offset)) : vs', offset'') where
+    f ((Obj name t _):vs) offset = ((Obj name t (0 - offset)) : vs', offset'') where
       (vs', offset'') = f vs (offset + 8)
 
 gen_block :: [Node] -> [Obj] -> ExceptT CodegenError (State CodegenState) ()

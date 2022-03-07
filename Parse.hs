@@ -10,6 +10,7 @@ import Data.List
 
 head_equal :: [Token] -> TokenKind -> Bool
 head_equal ((Token (Punct a) _ _) : _) (Punct b) = a == b
+head_equal ((Token (Ident a) _ _) : _) (Ident b) = a == b
 head_equal ((Token (Keyword a) _ _) : _) (Keyword b) = a == b
 head_equal ((Token EOF _ _) : _) EOF = True
 head_equal [] _ = False
@@ -45,6 +46,7 @@ primary       :: ExceptT Error (State ParserState) Node
 unary         :: ExceptT Error (State ParserState) Node
 assign        :: ExceptT Error (State ParserState) Node
 compound_stmt :: ExceptT Error (State ParserState) Node
+declaration   :: ExceptT Error (State ParserState) Node
 expr          :: ExceptT Error (State ParserState) Node
 
 equality      :: ExceptT Error (State ParserState) Node
@@ -220,12 +222,12 @@ find_var :: String -> ExceptT Error (State ParserState) (Maybe Obj)
 find_var var = do
   vars <- getLocals
   return (find f vars) where
-    f (Obj name _) = var == name
+    f (Obj name _ _) = var == name
 
-new_lvar :: String -> ExceptT Error (State ParserState) Obj
-new_lvar name = do
+new_lvar :: String -> Type -> ExceptT Error (State ParserState) Obj
+new_lvar name t = do
   vars <- getLocals
-  let v = Obj name 0
+  let v = Obj name t 0
   putLocals (v:vars)
   return v
 
@@ -240,9 +242,7 @@ primary = do
     (Token (Ident str) _ _) -> do
       fv <- find_var str
       case fv of
-        Nothing -> do
-          var <- new_lvar str
-          return $ Node (VAR var) INT t
+        Nothing -> throwE (ErrorToken t "undefined variable")
         Just var -> return $ Node (VAR var) INT t
     (Token (Punct "(") _ _) -> do
       node <- expr
@@ -250,6 +250,14 @@ primary = do
       return node
     _ -> throwE (ErrorToken t "expected an expression")
 
+consume :: TokenKind -> ExceptT Error (State ParserState) Bool
+consume tok = do
+  (t:ts) <- getTokens
+  if head_equal (t:ts) tok
+  then do
+    putTokens ts
+    return True
+  else return False
 
 skip :: TokenKind -> ExceptT Error (State ParserState) ()
 skip tok = do
@@ -273,6 +281,59 @@ expr_stmt = do
     skip (Punct ";")
     return $ Node (EXPS_STMT [node]) INT tok
 
+-- declspec = "int"
+declspec   :: ExceptT Error (State ParserState) Type
+declspec = do
+  skip (Keyword "int")
+  return INT
+
+-- declarator = "*"* ident
+declarator :: Type -> ExceptT Error (State ParserState) Obj
+declarator basetype = do
+  ty <- ptr_wrap basetype
+  tok <- popHeadToken
+  case tok of
+    Token (Ident name) _ _ -> do
+      new_lvar name ty
+    _ -> throwE (ErrorToken tok "expected an identifier")
+  where
+    ptr_wrap base = do
+      isPtr <- consume (Punct "*")
+      if isPtr
+      then ptr_wrap (PTR base)
+      else return base
+
+
+
+-- declaration = declspec (declarator ("=" expr)? ("," declarator ("=" expr)?)*)? ";"
+declaration = do
+  tok <- seeHeadToken
+  basety <- declspec
+  nodes <- iter basety []
+  skip (Punct ";")
+  return $ Node (BLOCK nodes) basety tok
+  where
+    decl_expr basety nodes = do
+      obj@(Obj _ ty _) <- declarator basety
+      isAssign <- head_equalM (Punct "=")
+      if isAssign
+      then do
+        tok <- popHeadToken
+        let lhs = Node (VAR obj) ty tok
+        rhs <- assign
+        let node = Node (BIN_OP Assign lhs rhs) ty tok
+        let expression  = Node (EXPS_STMT [node]) INT tok
+        return $ nodes ++ [expression]
+      else return nodes
+
+    iter basety nodes = do
+      nodes_ <- decl_expr basety nodes
+      isNext <- head_equalM (Punct ",")
+      if isNext
+      then do
+        skip (Punct ",")
+        decl_expr basety nodes_
+      else return nodes_
 
 compound_stmt  = do
   tok <- seeHeadToken
@@ -286,8 +347,14 @@ compound_stmt  = do
         _ <- popHeadToken
         return nodes
       else do
-        node <- stmt
-        iter (nodes ++ [node])
+        ts <- getTokens
+        if head_equal ts (Keyword "int")
+        then do
+          node <- declaration
+          iter (nodes ++ [node])
+        else do
+          node <- stmt
+          iter (nodes ++ [node])
 
 maybe_expr :: TokenKind -> ExceptT Error (State ParserState) (Maybe Node)
 maybe_expr tk = do
