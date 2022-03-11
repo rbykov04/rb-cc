@@ -232,7 +232,9 @@ new_lvar name t = do
   return v
 
   
--- primary = "(" expr ")" | ident | num
+-- primary = "(" expr ")" | ident args? | num
+-- args = "(" ")"
+
 primary = do
   (t: ts) <- getTokens
   putTokens ts
@@ -240,10 +242,17 @@ primary = do
     (Token (Num v) _ _) -> do
        return $ Node (NUM v) INT t
     (Token (Ident str) _ _) -> do
-      fv <- find_var str
-      case fv of
-        Nothing -> throwE (ErrorToken t "undefined variable")
-        Just var -> return $ Node (VAR var) INT t
+      isFunc <- head_equalM (Punct "(")
+      if isFunc
+      then do
+        _ <- popHeadToken
+        skip (Punct ")")
+        return $ Node (FUNCALL str) INT t
+      else do
+        fv <- find_var str
+        case fv of
+          Nothing -> throwE (ErrorToken t "undefined variable")
+          Just var -> return $ Node (VAR var) INT t
     (Token (Punct "(") _ _) -> do
       node <- expr
       skip (Punct ")")

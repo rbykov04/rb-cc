@@ -75,6 +75,11 @@ gen_expr depth (Node (BIN_OP Assign lhs rhs) _ tok) locals = do
   genLine "  mov %rax, (%rdi)\n"
   return depth
 
+gen_expr depth (Node (FUNCALL name) _ tok) _ = do
+  genLine $"  mov $0, %rax\n"
+  genLine $"  call "++ name ++ "\n"
+  return depth
+
 gen_expr depth (Node (NUM a) _ tok) _ = do
   genLine $ "  mov $" ++ show a ++ ", %rax\n"
   return depth

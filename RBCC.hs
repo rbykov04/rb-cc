@@ -53,6 +53,7 @@ data Node_ =
   | BIN_OP BinOp Node Node
   | UNARY UnOp Node
   | EXPS_STMT [Node]
+  | FUNCALL String
   | RETURN Node            -- "return"
   | BLOCK [Node]
 
