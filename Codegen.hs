@@ -61,6 +61,10 @@ convertEx e = do
       return d
     Left err -> throwE err
 
+argreg :: [String]
+--argreg = ["%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"]
+argreg = ["%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"]
+
 gen_expr ::Int -> Node ->[Obj]-> ExceptT CodegenError (State CodegenState) Int
 gen_expr depth node@(Node (VAR _) _ tok) locals = do
   gen_addr node locals
@@ -75,10 +79,27 @@ gen_expr depth (Node (BIN_OP Assign lhs rhs) _ tok) locals = do
   genLine "  mov %rax, (%rdi)\n"
   return depth
 
-gen_expr depth (Node (FUNCALL name) _ tok) _ = do
+gen_expr depth (Node (FUNCALL name arguments) _ tok) locals = do
+  let nargs = length arguments
+  let fregs = reverse $ take nargs argreg
+  depth <- gen_args depth arguments
+  depth <- pop_reg depth fregs nargs
+
   genLine $"  mov $0, %rax\n"
   genLine $"  call "++ name ++ "\n"
+
   return depth
+  where
+    pop_reg depth _ 0 = return depth
+    pop_reg depth (r:regs) count  = do
+      depth <- convertEx $ Right $ pop r depth
+      pop_reg depth regs (count - 1)
+
+    gen_args depth []         = return depth
+    gen_args depth (arg:args) = do
+      depth <- gen_expr depth arg locals
+      depth <- convertEx $ Right $ push depth
+      gen_args depth args
 
 gen_expr depth (Node (NUM a) _ tok) _ = do
   genLine $ "  mov $" ++ show a ++ ", %rax\n"
@@ -186,16 +207,16 @@ gen_bin_op Add =   ["  add %rdi, %rax\n"]
 gen_bin_op Sub =   ["  sub %rdi, %rax\n"]
 gen_bin_op Mul =   ["  imul %rdi, %rax\n"]
 gen_bin_op Div =   ["  cqo\n",
-                  "  idiv %rdi\n" ]
+                    "  idiv %rdi\n" ]
 
 gen_bin_op ND_EQ = [" cmp %rdi, %rax\n",
-                  " sete %al\n"]
+                    " sete %al\n"]
 gen_bin_op ND_NE = [" cmp %rdi, %rax\n",
-                  " setne %al\n"]
+                    " setne %al\n"]
 gen_bin_op ND_LT = [" cmp %rdi, %rax\n",
-                  " setl %al\n"]
+                    " setl %al\n"]
 gen_bin_op ND_LE = [" cmp %rdi, %rax\n",
-                  " setle %al\n"]
+                    " setle %al\n"]
 
 
 assert :: Bool -> a -> a

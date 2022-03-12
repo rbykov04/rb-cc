@@ -43,6 +43,7 @@ type ParserState = ([Token], [Obj])
 stmt          :: ExceptT Error (State ParserState) Node
 expr_stmt     :: ExceptT Error (State ParserState) Node
 primary       :: ExceptT Error (State ParserState) Node
+funcall       :: ExceptT Error (State ParserState) Node
 unary         :: ExceptT Error (State ParserState) Node
 assign        :: ExceptT Error (State ParserState) Node
 compound_stmt :: ExceptT Error (State ParserState) Node
@@ -231,10 +232,37 @@ new_lvar name t = do
   putLocals (v:vars)
   return v
 
-  
+-- funcall == ident "(" (assign ("," assign)*)? ")"
+funcall = do
+  ident <- popHeadToken
+  case ident of
+    (Token (Ident name) _ _) -> do
+      skip (Punct "(")
+      args <- get_args
+      skip (Punct ")")
+      return $ Node (FUNCALL name args) INT ident
+    _ -> throwE (ErrorToken ident "expected an ident")
+  where
+    get_args = do
+      isEnd <- head_equalM (Punct ")")
+      if isEnd
+      then return []
+      else do
+        arg <- assign
+        f_iter [arg]
+
+    f_iter args = do
+      isEnd <- head_equalM (Punct ")")
+      if isEnd
+      then return args
+      else do
+        skip (Punct ",")
+        arg <- assign
+        f_iter $ args ++ [arg]
+
+
 -- primary = "(" expr ")" | ident args? | num
 -- args = "(" ")"
-
 primary = do
   (t: ts) <- getTokens
   putTokens ts
@@ -245,9 +273,8 @@ primary = do
       isFunc <- head_equalM (Punct "(")
       if isFunc
       then do
-        _ <- popHeadToken
-        skip (Punct ")")
-        return $ Node (FUNCALL str) INT t
+        putTokens (t:ts)
+        funcall
       else do
         fv <- find_var str
         case fv of
