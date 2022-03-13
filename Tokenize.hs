@@ -75,6 +75,11 @@ printError input (ErrorToken t text) = do
   error_tok input t text
 
 
+printError input (ErrorText text) = do
+  hPutStrLn stderr $ text
+  return 1
+
+
 convert_keywords :: [Token] -> [Token]
 convert_keywords [] = []
 convert_keywords (tok@(Token (Ident name) a b): toks)

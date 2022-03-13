@@ -45,6 +45,7 @@ data UnOp =
 data Type
   = INT
   | PTR Type
+  | FUNC Type
   deriving (Show, Eq)
 
 data Node_ =
@@ -78,6 +79,7 @@ data Obj = Obj
 data Function = Function {
     functionBody      :: [Node],
     functionLocals    :: [Obj],
-    functionStackSize :: Int
+    functionStackSize :: Int,
+    functionName      :: String
   }
   deriving (Show, Eq)

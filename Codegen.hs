@@ -5,23 +5,37 @@ import Control.Monad.Trans.Except
 import Control.Monad.State
 
 type CodegenError = Error
-type CodegenState = ([String], Int)
+type CodegenState = ([String], Int, Maybe Function)
+
+getCurFuncName :: ExceptT CodegenError (State CodegenState) String
+getCurFuncName  = do
+  (_, _, f) <- get
+  case f of
+    Nothing ->  do
+
+      throwE $ ErrorText "current func is NULL"
+    Just (Function _ _ _ name) -> return name
+
+setCurFunc :: Function -> ExceptT CodegenError (State CodegenState) ()
+setCurFunc func = do
+  (code, count, _) <- get
+  put (code, count, Just func)
 
 genLine :: String -> ExceptT CodegenError (State CodegenState) ()
 genLine prog = do
-  r <- get
-  put (fst r ++ [prog], snd r)
+  (code, count, f) <- get
+  put (code ++ [prog], count, f)
 
 genLines :: [String] -> ExceptT CodegenError (State CodegenState) ()
 genLines prog = do
-  r <- get
-  put (fst r ++ prog, snd r)
+  (code, count, f) <- get
+  put (code ++ prog, count, f)
 
 getCount :: ExceptT CodegenError (State CodegenState) Int
 getCount = do
-  r <- get
-  put (fst r, snd r + 1)
-  return $ snd r
+  (code, count, f) <- get
+  put (code, count + 1, f)
+  return $ count
 
 
 push :: Int -> (Int, [String])
@@ -198,7 +212,8 @@ gen_stmt (Node (FOR ini cond inc body) _ tok) locals = do
 gen_stmt (Node (RETURN node) _ tok) locals = do
   d <- gen_expr 0 node locals
   let _ = assert (d == 0) 0
-  genLine "  jmp .L.return\n"
+  fname <- getCurFuncName
+  genLine $ "  jmp .L.return." ++ fname ++ "\n"
 
 gen_stmt (Node _ _ tok) _ = throwE $ ErrorToken tok ("gen stmt: invalid statement ")
 
@@ -230,7 +245,7 @@ align_to n align = ((n + align - 1) `div` align) * align
 
 
 assign_lvar_offset :: Function -> Function
-assign_lvar_offset (Function node vars _) = Function node vars' (align_to offset' 16)
+assign_lvar_offset (Function node vars _ name) = Function node vars' (align_to offset' 16) name
   where
     (vars', offset') = f vars 0
     f [] r = ([], r)
@@ -243,32 +258,39 @@ gen_block (n:ns) l = do
   gen_stmt n l
   gen_block ns l
 
-codegen_ :: Function -> ExceptT CodegenError (State CodegenState) ()
-codegen_ f = do
-  let f' = assign_lvar_offset f
-  let locals = functionLocals f'
-  let body = functionBody f'
-  let stack_size = functionStackSize f'
+codegen_ :: [Function] -> ExceptT CodegenError (State CodegenState) ()
+codegen_ = iter where
+  iter [] = return ()
+  iter (f:fs) = do
+    let f' = assign_lvar_offset f
+    let locals = functionLocals f'
+    let body = functionBody f'
+    let stack_size = functionStackSize f'
+    let name = functionName f'
 
-  genLine "  .globl main\n"
-  genLine "main:\n"
-  -- Prologue
-  genLine "  push %rbp\n"
-  genLine "  mov %rsp, %rbp\n"
-  genLine $ "  sub $" ++ show stack_size ++", %rsp\n"
+    setCurFunc f'
 
-  -- Traverse the AST to emit assembly
-  gen_block body locals
+    genLine $ "  .globl " ++ name ++ "\n"
+    genLine $ name ++ ":\n"
+    -- Prologue
+    genLine "  push %rbp\n"
+    genLine "  mov %rsp, %rbp\n"
+    genLine $ "  sub $" ++ show stack_size ++", %rsp\n"
 
-  genLine ".L.return:\n"
-  genLine "  mov %rbp, %rsp\n"
-  genLine "  pop %rbp\n"
-  genLine "  ret\n"
+    -- Traverse the AST to emit assembly
+    gen_block body locals
+
+    genLine $".L.return." ++ name ++ ":\n"
+    genLine "  mov %rbp, %rsp\n"
+    genLine "  pop %rbp\n"
+    genLine "  ret\n"
+
+    iter fs
 
 
-codegen :: Function -> Either Error [String]
+codegen :: [Function] -> Either Error [String]
 codegen f = do
-  let (r,s') = runState (runExceptT (codegen_ f)) ([], 1)
+  let (r,(code, _, _)) = runState (runExceptT (codegen_ f)) ([], 1, Nothing)
   case r of
     Left e -> Left e
-    Right _ -> return (fst s')
+    Right _ -> return code

@@ -323,14 +323,26 @@ declspec = do
   skip (Keyword "int")
   return INT
 
--- declarator = "*"* ident
-declarator :: Type -> ExceptT Error (State ParserState) Obj
+type_suffix :: Type -> ExceptT Error (State ParserState) Type
+type_suffix base = do
+  isFunc <- head_equalM (Punct "(")
+  if isFunc
+  then do
+    skip (Punct "(")
+    skip (Punct ")")
+    return $ FUNC base
+  else return base
+
+
+-- declarator = "*"* ident type-suffix
+declarator :: Type -> ExceptT Error (State ParserState) (Type, String)
 declarator basetype = do
   ty <- ptr_wrap basetype
   tok <- popHeadToken
   case tok of
     Token (Ident name) _ _ -> do
-      new_lvar name ty
+      decl_type <- type_suffix ty
+      return (decl_type, name)
     _ -> throwE (ErrorToken tok "expected an identifier")
   where
     ptr_wrap base = do
@@ -350,7 +362,8 @@ declaration = do
   return $ Node (BLOCK nodes) basety tok
   where
     decl_expr basety nodes = do
-      obj@(Obj _ ty _) <- declarator basety
+      (ty, name) <- declarator basety
+      obj <- new_lvar name ty
       isAssign <- head_equalM (Punct "=")
       if isAssign
       then do
@@ -458,27 +471,38 @@ stmt  = do
     compound_stmt
   else expr_stmt
 
-program :: ExceptT Error (State ParserState) [Node]
-program = do
+function :: ExceptT Error (State ParserState) Function
+function = do
+  putLocals []
+  ty <- declspec
+  (_, name) <- declarator ty
+
+
   skip (Punct "{")
-  ts <- compound_stmt
-  return [ts]
+  s <- compound_stmt
+  let nodes = [s]
 
-
-
-parseS :: ExceptT Error (State ParserState) Function
-parseS = do
-  nodes <- program
-  ts <- getTokens
   locals <- getLocals
+  return $ Function nodes locals 208 name
 
-  if not $ head_equal ts EOF
-  then throwE (ErrorToken (head ts) "extra token")
-  else return (Function nodes locals 208)
 
-parse :: [Token] -> Either Error (Function, [Token])
+
+-- program = function-definition*
+program :: ExceptT Error (State ParserState) [Function]
+program = iter []
+  where
+    iter funcs = do
+      isEnd <- head_equalM EOF
+      if isEnd
+      then return funcs
+      else do
+        f <- function
+        iter $ funcs ++ [f]
+
+
+parse :: [Token] -> Either Error ([Function], [Token])
 parse toks = do
-  let (r,s') = runState (runExceptT parseS) (toks, [])
+  let (r,s') = runState (runExceptT program) (toks, [])
   case r of
     Left e -> Left e
     Right out -> return (out, fst s')
