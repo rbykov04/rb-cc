@@ -323,15 +323,34 @@ declspec = do
   skip (Keyword "int")
   return INT
 
+-- type-suffix = ("(" func-params? ")")?
+-- func-params = param ("," param)*
+-- param       = declspec declarator
 type_suffix :: Type -> ExceptT Error (State ParserState) Type
 type_suffix base = do
   isFunc <- head_equalM (Punct "(")
   if isFunc
   then do
     skip (Punct "(")
+    args <- iter []
     skip (Punct ")")
-    return $ FUNC base
+    return $ FUNC base args
   else return base
+  where
+    iter params = do
+      isEnd <- head_equalM (Punct ")")
+      if isEnd then return params
+      else do
+         basety <- declspec
+         arg <- declarator basety
+         isNext <- head_equalM (Punct ",")
+         let res = params ++ [arg]
+         if isNext
+         then do
+           skip (Punct ",")
+           iter res
+         else return res
+
 
 
 -- declarator = "*"* ident type-suffix
@@ -471,19 +490,37 @@ stmt  = do
     compound_stmt
   else expr_stmt
 
+
+create_param_lvars :: [(Type,String)] -> ExceptT Error (State ParserState) [Obj]
+create_param_lvars [] = return []
+create_param_lvars ((ty, name):args) = do
+  objs <- create_param_lvars args
+  o <- new_lvar name ty
+  return $  o : objs
+
+
+
+
 function :: ExceptT Error (State ParserState) Function
 function = do
+  t <- seeHeadToken
   putLocals []
   ty <- declspec
-  (_, name) <- declarator ty
-
-
+  (ftype, name) <- declarator ty
+  args <- create_args ftype
   skip (Punct "{")
   s <- compound_stmt
   let nodes = [s]
 
   locals <- getLocals
-  return $ Function nodes locals 208 name
+  return $ Function nodes locals 208 name args ftype
+  where
+    create_args ty =
+      case ty of
+        FUNC _ args -> create_param_lvars args
+        _ -> do
+          t <- seeHeadToken
+          throwE (ErrorToken t "incorrect type for func")
 
 
 

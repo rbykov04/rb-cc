@@ -14,7 +14,7 @@ getCurFuncName  = do
     Nothing ->  do
 
       throwE $ ErrorText "current func is NULL"
-    Just (Function _ _ _ name) -> return name
+    Just (Function _ _ _ name _ _) -> return name
 
 setCurFunc :: Function -> ExceptT CodegenError (State CodegenState) ()
 setCurFunc func = do
@@ -76,7 +76,6 @@ convertEx e = do
     Left err -> throwE err
 
 argreg :: [String]
---argreg = ["%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"]
 argreg = ["%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"]
 
 gen_expr ::Int -> Node ->[Obj]-> ExceptT CodegenError (State CodegenState) Int
@@ -245,9 +244,9 @@ align_to n align = ((n + align - 1) `div` align) * align
 
 
 assign_lvar_offset :: Function -> Function
-assign_lvar_offset (Function node vars _ name) = Function node vars' (align_to offset' 16) name
+assign_lvar_offset (Function node vars _ name args t) = Function node vars' (align_to offset' 16) name args t
   where
-    (vars', offset') = f vars 0
+    (vars', offset') = f vars 8
     f [] r = ([], r)
     f ((Obj name t _):vs) offset = ((Obj name t (0 - offset)) : vs', offset'') where
       (vs', offset'') = f vs (offset + 8)
@@ -258,6 +257,15 @@ gen_block (n:ns) l = do
   gen_stmt n l
   gen_block ns l
 
+get_obj :: Obj -> [Obj] -> ExceptT CodegenError (State CodegenState) Obj
+get_obj (Obj var _ _) locals = do
+  case find f locals of
+    Nothing ->  throwE $ ErrorText ("variable " ++ var ++ " is not declare")
+    Just res -> return res
+    where
+      f (Obj name _ _) = var == name
+
+
 codegen_ :: [Function] -> ExceptT CodegenError (State CodegenState) ()
 codegen_ = iter where
   iter [] = return ()
@@ -267,6 +275,7 @@ codegen_ = iter where
     let body = functionBody f'
     let stack_size = functionStackSize f'
     let name = functionName f'
+    let args = functionArgs f'
 
     setCurFunc f'
 
@@ -277,6 +286,9 @@ codegen_ = iter where
     genLine "  mov %rsp, %rbp\n"
     genLine $ "  sub $" ++ show stack_size ++", %rsp\n"
 
+    --Save passed-by-register arguments to the stack
+    add_func_args locals args argreg
+
     -- Traverse the AST to emit assembly
     gen_block body locals
 
@@ -286,6 +298,12 @@ codegen_ = iter where
     genLine "  ret\n"
 
     iter fs
+  add_func_args _ [] _ = pure ()
+  add_func_args locals (a: args) (r:regs)= do
+    Obj _ _ offset <- get_obj a locals
+    genLine $ "  mov " ++ r ++ ", "++ show offset ++ "(%rbp) \n"
+    add_func_args locals args regs
+
 
 
 codegen :: [Function] -> Either Error [String]
