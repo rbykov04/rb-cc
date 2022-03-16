@@ -3,6 +3,7 @@ import System.Environment
 import System.IO
 import Text.Printf
 import Data.Char
+import Data.List
 import RBCC
 
 strtol :: Int -> String -> (Int, String, Int)
@@ -79,15 +80,13 @@ printError input (ErrorText text) = do
   hPutStrLn stderr $ text
   return 1
 
+keywords = ["return", "if", "else", "for", "while", "int"]
 
 convert_keywords :: [Token] -> [Token]
-convert_keywords [] = []
-convert_keywords (tok@(Token (Ident name) a b): toks)
-  | name == "return" = (Token (Keyword name) a b): convert_keywords toks
-  | name == "if" = (Token (Keyword name) a b): convert_keywords toks
-  | name == "else" = (Token (Keyword name) a b): convert_keywords toks
-  | name == "for" = (Token (Keyword name) a b): convert_keywords toks
-  | name == "while" = (Token (Keyword name) a b): convert_keywords toks
-  | name == "int" = (Token (Keyword name) a b): convert_keywords toks
-  | otherwise = tok: convert_keywords toks
-convert_keywords (tok: toks) = tok: convert_keywords toks
+convert_keywords = map toKeyword
+  where
+    toKeyword tok@(Token (Ident name) a b) =
+      case find (== name) keywords of
+        Nothing ->  tok
+        Just _ -> (Token (Keyword name) a b)
+    toKeyword tok = tok
