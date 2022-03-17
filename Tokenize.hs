@@ -1,7 +1,5 @@
 module Tokenize where
-import System.Environment
 import System.IO
-import Text.Printf
 import Data.Char
 import Data.List
 import RBCC

@@ -151,14 +151,7 @@ gen_stmt (Node (EXPS_STMT (n:ns)) t tok) locals= do
   let _ = assert (d == 0) 0
   gen_stmt (Node (EXPS_STMT ns) t tok) locals
 
-gen_stmt (Node (BLOCK nodes) _ tok) locals =
-    iter nodes
-    where
-      iter [] = return ()
-      iter (n:ns) = do
-        gen_stmt n locals
-        iter ns
-
+gen_stmt (Node (BLOCK nodes) _ tok) locals = forM_ nodes (\node  -> gen_stmt node locals)
 
 gen_stmt (Node (IF cond then_ else_) _ tok) locals = do
   c <- getCount
@@ -205,8 +198,6 @@ gen_stmt (Node (FOR ini cond inc body) _ tok) locals = do
         Just node -> do
           _ <- gen_expr 0 node locals
           return ()
-
-
 
 gen_stmt (Node (RETURN node) _ tok) locals = do
   d <- gen_expr 0 node locals
