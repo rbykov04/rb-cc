@@ -5,16 +5,26 @@ import Control.Monad.Trans.Except
 import Control.Monad.State
 
 type CodegenError = Error
-type CodegenState = ([String], Int, Maybe Function)
+type CodegenState = ([String], Int, Maybe Function, Int)
+
+getDepth :: ExceptT CodegenError (State CodegenState) Int
+getDepth = do
+  (_, _, _, depth) <- get
+  return depth
+
+setDepth :: Int -> ExceptT CodegenError (State CodegenState) ()
+setDepth depth = do
+  (code, count, f, _) <- get
+  put (code, count, f, depth)
 
 setCurFunc :: Function -> ExceptT CodegenError (State CodegenState) ()
 setCurFunc func = do
-  (code, count, _) <- get
-  put (code, count, Just func)
+  (code, count, _, depth) <- get
+  put (code, count, Just func, depth)
 
 getCurFunc :: ExceptT CodegenError (State CodegenState) Function
 getCurFunc  = do
-  (_, _, myabe_f) <- get
+  (_, _, myabe_f, _) <- get
   case myabe_f of
     Nothing -> throwE $ ErrorText "current func is NULL"
     Just f -> return f
@@ -27,25 +37,29 @@ getCurLocals  = fmap functionLocals getCurFunc
 
 genLine :: String -> ExceptT CodegenError (State CodegenState) ()
 genLine prog = do
-  (code, count, f) <- get
-  put (code ++ [prog], count, f)
+  (code, count, f, depth) <- get
+  put (code ++ [prog], count, f, depth)
 
 genLines :: [String] -> ExceptT CodegenError (State CodegenState) ()
 genLines prog = do
-  (code, count, f) <- get
-  put (code ++ prog, count, f)
+  (code, count, f, depth) <- get
+  put (code ++ prog, count, f, depth)
 
 getCount :: ExceptT CodegenError (State CodegenState) Int
 getCount = do
-  (code, count, f) <- get
-  put (code, count + 1, f)
+  (code, count, f, depth) <- get
+  put (code, count + 1, f, depth)
   return $ count
 
-push :: Int -> (Int, [String])
-push depth = (depth + 1, ["  push %rax\n"])
+push_ :: Int -> (Int, [String])
+push_ depth = (depth + 1, ["  push %rax\n"])
 
-pop :: String -> Int -> (Int, [String])
-pop text depth = (depth - 1, ["  pop "++text ++ "\n"])
+
+pop_ :: String -> Int -> (Int, [String])
+pop_ text depth = (depth - 1, ["  pop "++text ++ "\n"])
+
+push     = convertEx push_
+pop text = convertEx $ pop_ text
 
 gen_addr :: Node -> ExceptT CodegenError (State CodegenState) ()
 gen_addr (Node (VAR (Obj var _ _)) _ tok) = do
@@ -58,7 +72,9 @@ gen_addr (Node (VAR (Obj var _ _)) _ tok) = do
       f (Obj name _ _) = var == name
 
 gen_addr (Node (UNARY Deref node) _ _) = do
-  _ <- gen_expr 0 node
+
+  setDepth 0
+  gen_expr node
   return ()
 
 gen_addr (Node _ _ tok) = throwE $ ErrorToken tok "Codegen: not a value"
@@ -69,78 +85,70 @@ convert e = do
     Right prog -> genLines prog
     Left err -> throwE err
 
-convertEx :: Either CodegenError (d, [String]) -> ExceptT CodegenError (State CodegenState) d
-convertEx e = do
-  case e of
-    Right (d, prog) -> do
-      genLines prog
-      return d
-    Left err -> throwE err
+convertEx :: (Int -> (Int, [String])) -> ExceptT CodegenError (State CodegenState) ()
+convertEx f = do
+    depth <- getDepth
+    let (d, prog) = f depth
+    setDepth d
+    genLines prog
 
 argreg :: [String]
 argreg = ["%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"]
 
-gen_expr ::Int -> Node ->ExceptT CodegenError (State CodegenState) Int
-gen_expr depth node@(Node kind _ tok) = case kind of
+gen_expr ::Node ->ExceptT CodegenError (State CodegenState) ()
+gen_expr node@(Node kind _ tok) = case kind of
   VAR _ -> do
     gen_addr node
     genLine "  mov (%rax), %rax\n"
-    return depth
 
   Assign lhs rhs -> do
     gen_addr lhs
-    depth <- convertEx $ Right $push depth
-    depth <- gen_expr depth rhs
-    depth <- convertEx $ Right $ pop "%rdi" depth
+    push
+    gen_expr rhs
+    pop "%rdi"
     genLine "  mov %rax, (%rdi)\n"
-    return depth
 
   FUNCALL name arguments -> do
     let nargs = length arguments
     let fregs = reverse $ take nargs argreg
-    depth <- gen_args depth arguments
-    depth <- pop_reg depth fregs nargs
+
+    gen_args arguments
+    pop_reg fregs nargs
 
     genLine $"  mov $0, %rax\n"
     genLine $"  call "++ name ++ "\n"
 
-    return depth
     where
-      pop_reg depth _ 0 = return depth
-      pop_reg depth (r:regs) count  = do
-        depth <- convertEx $ Right $ pop r depth
-        pop_reg depth regs (count - 1)
+      pop_reg _ 0 = return ()
+      pop_reg (r:regs) count  = do
+        pop r
+        pop_reg regs (count - 1)
 
-      gen_args depth []         = return depth
-      gen_args depth (arg:args) = do
-        depth <- gen_expr depth arg
-        depth <- convertEx $ Right $ push depth
-        gen_args depth args
+      gen_args []         = return ()
+      gen_args  (arg:args) = do
+        gen_expr arg
+        push
+        gen_args args
 
   NUM a -> do
     genLine $ "  mov $" ++ show a ++ ", %rax\n"
-    return depth
 
   UNARY op operand -> case op of
     Neg -> do
-      depth <- gen_expr depth operand
+      gen_expr operand
       genLine "  neg %rax\n"
-      return depth
     Addr -> do
       gen_addr operand
-      return depth
     Deref -> do
-      depth <- gen_expr depth operand
+      gen_expr operand
       genLine "  mov (%rax), %rax\n"
-      return depth
 
   BIN_OP op lhs rhs -> do
-    depth <- gen_expr depth rhs
-    depth <- convertEx $ Right $ push depth
-    depth <- gen_expr depth lhs
-    depth <- convertEx $ Right $ pop "%rdi" depth
+    gen_expr rhs
+    push
+    gen_expr lhs
+    pop "%rdi"
     genLines $gen_bin_op op
-    return depth
 
   _ -> throwE $ ErrorToken tok "Codegen: invalid expression"
 
@@ -148,7 +156,9 @@ gen_stmt :: Node -> ExceptT CodegenError (State CodegenState) ()
 gen_stmt (Node (EXPS_STMT []) _ tok) = return ()
 
 gen_stmt (Node (EXPS_STMT (n:ns)) t tok) = do
-  d <- gen_expr 0 n
+  setDepth 0
+  gen_expr n
+  d <- getDepth
   let _ = assert (d == 0) 0
   gen_stmt (Node (EXPS_STMT ns) t tok)
 
@@ -156,7 +166,8 @@ gen_stmt (Node (BLOCK nodes) _ tok) = forM_ nodes gen_stmt
 
 gen_stmt (Node (IF cond then_ else_) _ tok) = do
   c <- getCount
-  _ <- gen_expr 0 cond
+  setDepth 0
+  gen_expr cond
 
   genLine       "  cmp $0, %rax\n"
   genLine $     "  je  .L.else."++ show c ++"\n"
@@ -190,18 +201,22 @@ gen_stmt (Node (FOR ini cond inc body) _ tok) = do
       case cond of
         Nothing -> return ()
         Just node -> do
-          _ <- gen_expr 0 node
+          setDepth 0
+          gen_expr node
           genLine $ "  cmp $0, %rax\n"
           genLine $ "  je  .L.end." ++ show c ++"\n"
     genInc = do
       case inc of
         Nothing -> return ()
         Just node -> do
-          _ <- gen_expr 0 node
+          setDepth 0
+          gen_expr node
           return ()
 
 gen_stmt (Node (RETURN node) _ tok) = do
-  d <- gen_expr 0 node
+  setDepth 0
+  gen_expr node
+  d <- getDepth
   let _ = assert (d == 0) 0
   fname <- getCurFuncName
   genLine $ "  jmp .L.return." ++ fname ++ "\n"
@@ -294,7 +309,7 @@ codegen_ = iter where
 
 codegen :: [Function] -> Either Error [String]
 codegen f = do
-  let (r,(code, _, _)) = runState (runExceptT (codegen_ f)) ([], 1, Nothing)
+  let (r,(code, _, _, _)) = runState (runExceptT (codegen_ f)) ([], 1, Nothing, 0)
   case r of
     Left e -> Left e
     Right _ -> return code
