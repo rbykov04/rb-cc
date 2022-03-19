@@ -17,6 +17,11 @@ setDepth depth = do
   (code, count, f, _) <- get
   put (code, count, f, depth)
 
+assert_depth_is_0 :: ExceptT CodegenError (State CodegenState) ()
+assert_depth_is_0 = do
+  d <- getDepth
+  unless (d==0) $ throwE $ ErrorText ("depth is not 0")
+
 setCurFunc :: Function -> ExceptT CodegenError (State CodegenState) ()
 setCurFunc func = do
   (code, count, _, depth) <- get
@@ -43,9 +48,6 @@ getVariable (Obj var _ _) = do
     Just res -> return res
     where
       f (Obj name _ _) = var == name
-
-
-
 
 genLine :: String -> ExceptT CodegenError (State CodegenState) ()
 genLine prog = do
@@ -80,15 +82,16 @@ push     = convertEx push_
 pop text = convertEx $ pop_ text
 
 gen_addr :: Node -> ExceptT CodegenError (State CodegenState) ()
-gen_addr (Node (VAR var) _ _) = do
-  Obj _ _ offset <- getVariable var
-  genLine $ "  lea " ++ show offset ++ "(%rbp), %rax\n"
+gen_addr (Node kind _ tok) = case kind of
+  VAR var -> do
+    Obj _ _ offset <- getVariable var
+    genLine $ "  lea " ++ show offset ++ "(%rbp), %rax\n"
 
-gen_addr (Node (UNARY Deref node) _ _) = do
-  setDepth 0
-  gen_expr node
+  UNARY Deref node -> do
+    setDepth 0
+    gen_expr node
 
-gen_addr (Node _ _ tok) = throwE $ ErrorToken tok "Codegen: not a value"
+  _ -> throwE $ ErrorToken tok "Codegen: not a value"
 
 argreg :: [String]
 argreg = ["%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"]
@@ -144,74 +147,73 @@ gen_expr node@(Node kind _ tok) = case kind of
   _ -> throwE $ ErrorToken tok "Codegen: invalid expression"
 
 gen_stmt :: Node -> ExceptT CodegenError (State CodegenState) ()
+gen_stmt (Node kind _ tok) = case kind of
+  EXPS_STMT node -> do
+    setDepth 0
+    gen_expr node
+    assert_depth_is_0
+    return ()
 
-gen_stmt (Node (EXPS_STMT node) t tok) = do
-  setDepth 0
-  gen_expr node
-  d <- getDepth
-  let _ = assert (d == 0) 0
-  return ()
+  BLOCK nodes -> forM_ nodes gen_stmt
 
-gen_stmt (Node (BLOCK nodes) _ tok) = forM_ nodes gen_stmt
+  IF cond then_ else_ -> do
+    c <- getCount
+    setDepth 0
+    gen_expr cond
 
-gen_stmt (Node (IF cond then_ else_) _ tok) = do
-  c <- getCount
-  setDepth 0
-  gen_expr cond
+    genLine       "  cmp $0, %rax\n"
+    genLine $     "  je  .L.else."++ show c ++"\n"
+    gen_stmt then_
+    genLine $     "  jmp .L.end." ++ show c ++ "\n"
+    genLine $     ".L.else." ++ show c++":\n"
 
-  genLine       "  cmp $0, %rax\n"
-  genLine $     "  je  .L.else."++ show c ++"\n"
-  gen_stmt then_
-  genLine $     "  jmp .L.end." ++ show c ++ "\n"
-  genLine $     ".L.else." ++ show c++":\n"
+    case else_ of
+      Just node -> do
+        gen_stmt node
+        genLine $ ".L.end."++ show c ++ ":\n"
+      Nothing ->
+        genLine $ ".L.end."++ show c ++ ":\n"
 
-  case else_ of
-    Just node -> do
-      gen_stmt node
-      genLine $ ".L.end."++ show c ++ ":\n"
-    Nothing ->
-      genLine $ ".L.end."++ show c ++ ":\n"
+  FOR ini cond inc body -> do
+    c <- getCount
+    genInit
+    genLine $     ".L.begin." ++ show c ++ ":\n"
+    genCond c
+    gen_stmt body
+    genInc
+    genLine $ "  jmp .L.begin." ++ show c ++ "\n"
+    genLine $ ".L.end." ++ show c ++ ":\n"
+    where
+      genInit = do
+        case ini of
+          Nothing -> return ()
+          Just node -> do
+            gen_stmt node
+      genCond c = do
+        case cond of
+          Nothing -> return ()
+          Just node -> do
+            setDepth 0
+            gen_expr node
+            genLine $ "  cmp $0, %rax\n"
+            genLine $ "  je  .L.end." ++ show c ++"\n"
+      genInc = do
+        case inc of
+          Nothing -> return ()
+          Just node -> do
+            setDepth 0
+            gen_expr node
+            return ()
 
-gen_stmt (Node (FOR ini cond inc body) _ tok) = do
-  c <- getCount
-  genInit
-  genLine $     ".L.begin." ++ show c ++ ":\n"
-  genCond c
-  gen_stmt body
-  genInc
-  genLine $ "  jmp .L.begin." ++ show c ++ "\n"
-  genLine $ ".L.end." ++ show c ++ ":\n"
-  where
-    genInit = do
-      case ini of
-        Nothing -> return ()
-        Just node -> do
-          gen_stmt node
-    genCond c = do
-      case cond of
-        Nothing -> return ()
-        Just node -> do
-          setDepth 0
-          gen_expr node
-          genLine $ "  cmp $0, %rax\n"
-          genLine $ "  je  .L.end." ++ show c ++"\n"
-    genInc = do
-      case inc of
-        Nothing -> return ()
-        Just node -> do
-          setDepth 0
-          gen_expr node
-          return ()
+  RETURN node -> do
+    setDepth 0
+    gen_expr node
+    assert_depth_is_0
+    fname <- getCurFuncName
+    genLine $ "  jmp .L.return." ++ fname ++ "\n"
 
-gen_stmt (Node (RETURN node) _ tok) = do
-  setDepth 0
-  gen_expr node
-  d <- getDepth
-  let _ = assert (d == 0) 0
-  fname <- getCurFuncName
-  genLine $ "  jmp .L.return." ++ fname ++ "\n"
+  _ -> throwE $ ErrorToken tok ("gen stmt: invalid statement ")
 
-gen_stmt (Node _ _ tok) = throwE $ ErrorToken tok ("gen stmt: invalid statement ")
 
 gen_bin_op :: BinOp -> [String]
 gen_bin_op Add =   ["  add %rdi, %rax\n"]
@@ -229,10 +231,6 @@ gen_bin_op ND_LT = [" cmp %rdi, %rax\n",
 gen_bin_op ND_LE = [" cmp %rdi, %rax\n",
                     " setle %al\n"]
 
-
-assert :: Bool -> a -> a
-assert False _ = error "assertion failed!"
-assert _     x = x
 
 -- Round up `n` to the nearest multiple of `align`. For instance,
 -- align_to 5 8  returns 8 and align_to 11  8  returns 16.
