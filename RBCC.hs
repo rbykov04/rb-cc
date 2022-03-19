@@ -33,7 +33,6 @@ data BinOp =
   | ND_NE    -- !=
   | ND_LT    -- <
   | ND_LE    -- <=
-  | Assign   -- =
   deriving (Show, Eq)
 
 data UnOp =
@@ -52,6 +51,7 @@ data Type
 data Node_ =
   NUM Int
   | VAR Obj
+  | Assign Node Node  -- =
   | BIN_OP BinOp Node Node
   | UNARY UnOp Node
   | EXPS_STMT [Node]

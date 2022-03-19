@@ -186,7 +186,7 @@ assign = do
   then do
     tok <- popHeadToken
     rhs <- assign
-    return $ Node (BIN_OP Assign lhs rhs) lhs_ty tok
+    return $ Node (Assign lhs rhs) lhs_ty tok
   else return lhs
 
 
@@ -389,7 +389,7 @@ declaration = do
         tok <- popHeadToken
         let lhs = Node (VAR obj) ty tok
         rhs <- assign
-        let node = Node (BIN_OP Assign lhs rhs) ty tok
+        let node = Node (Assign lhs rhs) ty tok
         let expression  = Node (EXPS_STMT [node]) INT tok
         return $ nodes ++ [expression]
       else return nodes

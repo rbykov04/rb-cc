@@ -86,7 +86,7 @@ gen_expr depth node@(Node (VAR _) _ tok) = do
   genLine "  mov (%rax), %rax\n"
   return depth
 
-gen_expr depth (Node (BIN_OP Assign lhs rhs) _ tok) = do
+gen_expr depth (Node (Assign lhs rhs) _ tok) = do
   gen_addr lhs
   depth <- convertEx $ Right $push depth
   depth <- gen_expr depth rhs
@@ -120,19 +120,18 @@ gen_expr depth (Node (NUM a) _ tok) = do
   genLine $ "  mov $" ++ show a ++ ", %rax\n"
   return depth
 
-gen_expr depth (Node (UNARY Neg a) _ tok) = do
-  depth <- gen_expr depth a
-  genLine "  neg %rax\n"
-  return depth
-
-gen_expr depth (Node (UNARY Addr node) _ _) = do
-  gen_addr node
-  return depth
-
-gen_expr depth (Node (UNARY Deref node) _ _) = do
-  depth <- gen_expr depth node
-  genLine "  mov (%rax), %rax\n"
-  return depth
+gen_expr depth (Node (UNARY op node) _ tok) = case op of
+  Neg -> do
+    depth <- gen_expr depth node
+    genLine "  neg %rax\n"
+    return depth
+  Addr -> do
+    gen_addr node
+    return depth
+  Deref -> do
+    depth <- gen_expr depth node
+    genLine "  mov (%rax), %rax\n"
+    return depth
 
 gen_expr depth (Node (BIN_OP op lhs rhs) _ tok) = do
   depth <- gen_expr depth rhs
