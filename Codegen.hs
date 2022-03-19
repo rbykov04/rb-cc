@@ -144,14 +144,13 @@ gen_expr node@(Node kind _ tok) = case kind of
   _ -> throwE $ ErrorToken tok "Codegen: invalid expression"
 
 gen_stmt :: Node -> ExceptT CodegenError (State CodegenState) ()
-gen_stmt (Node (EXPS_STMT []) _ tok) = return ()
 
-gen_stmt (Node (EXPS_STMT (n:ns)) t tok) = do
+gen_stmt (Node (EXPS_STMT node) t tok) = do
   setDepth 0
-  gen_expr n
+  gen_expr node
   d <- getDepth
   let _ = assert (d == 0) 0
-  gen_stmt (Node (EXPS_STMT ns) t tok)
+  return ()
 
 gen_stmt (Node (BLOCK nodes) _ tok) = forM_ nodes gen_stmt
 

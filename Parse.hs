@@ -315,7 +315,7 @@ expr_stmt = do
     tok <- seeHeadToken
     node <- expr
     skip (Punct ";")
-    return $ Node (EXPS_STMT [node]) INT tok
+    return $ Node (EXPS_STMT node) INT tok
 
 -- declspec = "int"
 declspec   :: ExceptT Error (State ParserState) Type
@@ -390,7 +390,7 @@ declaration = do
         let lhs = Node (VAR obj) ty tok
         rhs <- assign
         let node = Node (Assign lhs rhs) ty tok
-        let expression  = Node (EXPS_STMT [node]) INT tok
+        let expression  = Node (EXPS_STMT node) INT tok
         return $ nodes ++ [expression]
       else return nodes
 
