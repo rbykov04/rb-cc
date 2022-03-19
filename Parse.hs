@@ -36,7 +36,10 @@ seeHeadToken = do
   (h:_) <- getTokens
   return h
 
-
+seeHeadTokenKind :: ExceptT Error (State ParserState) TokenKind
+seeHeadTokenKind = do
+  tok <- seeHeadToken
+  return $ tokenKind tok
 
 type ParserState = ([Token], [Obj])
 
@@ -154,69 +157,61 @@ new_sub lhs@(Node _ (PTR _) _) rhs@(Node _ (PTR _) _) tok = do
 -- num - ptr
 new_sub _ _ t = throwE (ErrorToken t "invalid operands")
 
-
-add        = do
+add  = do
   node <- mul
   join_ node
   where
     join_ lhs = do
-      ts <- getTokens
-      if head_equal ts (Punct "+")
-      then do
-        tok <- popHeadToken
-        rhs <- mul
-        n_ <- new_add lhs rhs tok
-        join_ n_
-      else if head_equal ts (Punct "-")
-      then do
-        tok <- popHeadToken
-        rhs <- mul
-        n_ <- new_sub lhs rhs tok
-        join_ $ n_
-      else
-        return lhs
-
+      kind <- seeHeadTokenKind
+      case kind of
+        Punct "+" -> do
+          tok <- popHeadToken
+          rhs <- mul
+          n_ <- new_add lhs rhs tok
+          join_ n_
+        Punct "-" -> do
+          tok <- popHeadToken
+          rhs <- mul
+          n_ <- new_sub lhs rhs tok
+          join_ $ n_
+        _ -> return lhs
 
  -- join_bin mul        [("+", BIN_OP Add), ("-", BIN_OP Sub)]
 
 assign = do
   lhs@(Node _ lhs_ty _) <- equality
-  ts <- getTokens
-  if head_equal ts (Punct "=")
-  then do
-    tok <- popHeadToken
-    rhs <- assign
-    return $ Node (Assign lhs rhs) lhs_ty tok
-  else return lhs
-
+  kind <- seeHeadTokenKind
+  case kind of
+    Punct "=" -> do
+      tok <- popHeadToken
+      rhs <- assign
+      return $ Node (Assign lhs rhs) lhs_ty tok
+    _ -> return lhs
 
 expr       = assign
 
 -- unary = ("+" | "-" | "*" | "&") unary
 unary = do
-  toks@(t: ts) <- getTokens
-  if head_equal toks (Punct "+")
-  then do
-    _ <- popHeadToken
-    unary
-  else if head_equal toks (Punct "-")
-  then do
+  kind <- seeHeadTokenKind
+  case kind of
+    Punct "+" -> do
+      _ <- popHeadToken
+      unary
+    Punct "-" -> do
       tok <- popHeadToken
       node <- unary
       return $ Node (UNARY Neg node) INT tok
-  else if head_equal toks (Punct "&")
-  then do
+    Punct "&" -> do
       tok <- popHeadToken
       node@(Node _ ty _) <- unary
       return $ Node (UNARY Addr node) (PTR ty) tok
-  else if head_equal toks (Punct "*")
-  then do
+    Punct "*" -> do
       tok <- popHeadToken
       node@(Node _ ty _) <- unary
       case ty of
         PTR base -> return $ Node (UNARY Deref node) base tok
         _        -> return $ Node (UNARY Deref node) INT tok
-   else primary
+    _ -> primary
 
 
 find_var :: String -> ExceptT Error (State ParserState) (Maybe Obj)
@@ -264,23 +259,24 @@ funcall = do
 -- primary = "(" expr ")" | ident args? | num
 -- args = "(" ")"
 primary = do
-  (t: ts) <- getTokens
+  (t@(Token kind _ _): ts) <- getTokens
   putTokens ts
-  case t of
-    (Token (Num v) _ _) -> do
+
+  case kind of
+    Num v -> do
        return $ Node (NUM v) INT t
-    (Token (Ident str) _ _) -> do
-      isFunc <- head_equalM (Punct "(")
-      if isFunc
-      then do
-        putTokens (t:ts)
-        funcall
-      else do
-        fv <- find_var str
-        case fv of
-          Nothing -> throwE (ErrorToken t "undefined variable")
-          Just var -> return $ Node (VAR var) INT t
-    (Token (Punct "(") _ _) -> do
+    Ident str -> do
+      next_kind <- seeHeadTokenKind
+      case next_kind of
+        Punct "(" -> do
+          putTokens (t:ts)
+          funcall
+        _ -> do
+          fv <- find_var str
+          case fv of
+            Nothing -> throwE (ErrorToken t "undefined variable")
+            Just var -> return $ Node (VAR var) INT t
+    Punct "(" -> do
       node <- expr
       skip (Punct ")")
       return node
@@ -298,11 +294,8 @@ consume tok = do
 skip :: TokenKind -> ExceptT Error (State ParserState) ()
 skip tok = do
   (t:ts) <- getTokens
-  if head_equal (t:ts) tok
-  then do
-    putTokens ts
-    return ()
-  else throwE (ErrorToken t ("expected" ++ show tok))
+  unless (head_equal (t:ts) tok) $ throwE (ErrorToken t ("expected "  ++ show tok))
+  putTokens ts
 
 -- expr-stmt = expr? ";"
 expr_stmt = do
@@ -490,16 +483,12 @@ stmt  = do
     compound_stmt
   else expr_stmt
 
-
 create_param_lvars :: [(Type,String)] -> ExceptT Error (State ParserState) [Obj]
 create_param_lvars [] = return []
 create_param_lvars ((ty, name):args) = do
   objs <- create_param_lvars args
   o <- new_lvar name ty
   return $  o : objs
-
-
-
 
 function :: ExceptT Error (State ParserState) Function
 function = do
@@ -522,8 +511,6 @@ function = do
           t <- seeHeadToken
           throwE (ErrorToken t "incorrect type for func")
 
-
-
 -- program = function-definition*
 program :: ExceptT Error (State ParserState) [Function]
 program = iter []
@@ -535,7 +522,6 @@ program = iter []
       else do
         f <- function
         iter $ funcs ++ [f]
-
 
 parse :: [Token] -> Either Error ([Function], [Token])
 parse toks = do
