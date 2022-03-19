@@ -345,7 +345,6 @@ type_suffix base = do
          else return res
 
 
-
 -- declarator = "*"* ident type-suffix
 declarator :: Type -> ExceptT Error (State ParserState) (Type, String)
 declarator basetype = do
@@ -484,11 +483,7 @@ stmt  = do
   else expr_stmt
 
 create_param_lvars :: [(Type,String)] -> ExceptT Error (State ParserState) [Obj]
-create_param_lvars [] = return []
-create_param_lvars ((ty, name):args) = do
-  objs <- create_param_lvars args
-  o <- new_lvar name ty
-  return $  o : objs
+create_param_lvars = mapM $ (uncurry . flip) new_lvar
 
 function :: ExceptT Error (State ParserState) Function
 function = do
