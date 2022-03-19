@@ -81,67 +81,68 @@ argreg :: [String]
 argreg = ["%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"]
 
 gen_expr ::Int -> Node ->ExceptT CodegenError (State CodegenState) Int
-gen_expr depth node@(Node (VAR _) _ tok) = do
-  gen_addr node
-  genLine "  mov (%rax), %rax\n"
-  return depth
-
-gen_expr depth (Node (Assign lhs rhs) _ tok) = do
-  gen_addr lhs
-  depth <- convertEx $ Right $push depth
-  depth <- gen_expr depth rhs
-  depth <- convertEx $ Right $ pop "%rdi" depth
-  genLine "  mov %rax, (%rdi)\n"
-  return depth
-
-gen_expr depth (Node (FUNCALL name arguments) _ tok) = do
-  let nargs = length arguments
-  let fregs = reverse $ take nargs argreg
-  depth <- gen_args depth arguments
-  depth <- pop_reg depth fregs nargs
-
-  genLine $"  mov $0, %rax\n"
-  genLine $"  call "++ name ++ "\n"
-
-  return depth
-  where
-    pop_reg depth _ 0 = return depth
-    pop_reg depth (r:regs) count  = do
-      depth <- convertEx $ Right $ pop r depth
-      pop_reg depth regs (count - 1)
-
-    gen_args depth []         = return depth
-    gen_args depth (arg:args) = do
-      depth <- gen_expr depth arg
-      depth <- convertEx $ Right $ push depth
-      gen_args depth args
-
-gen_expr depth (Node (NUM a) _ tok) = do
-  genLine $ "  mov $" ++ show a ++ ", %rax\n"
-  return depth
-
-gen_expr depth (Node (UNARY op node) _ tok) = case op of
-  Neg -> do
-    depth <- gen_expr depth node
-    genLine "  neg %rax\n"
-    return depth
-  Addr -> do
+gen_expr depth node@(Node kind _ tok) = case kind of
+  VAR _ -> do
     gen_addr node
-    return depth
-  Deref -> do
-    depth <- gen_expr depth node
     genLine "  mov (%rax), %rax\n"
     return depth
 
-gen_expr depth (Node (BIN_OP op lhs rhs) _ tok) = do
-  depth <- gen_expr depth rhs
-  depth <- convertEx $ Right $ push depth
-  depth <- gen_expr depth lhs
-  depth <- convertEx $ Right $ pop "%rdi" depth
-  genLines $gen_bin_op op
-  return depth
+  Assign lhs rhs -> do
+    gen_addr lhs
+    depth <- convertEx $ Right $push depth
+    depth <- gen_expr depth rhs
+    depth <- convertEx $ Right $ pop "%rdi" depth
+    genLine "  mov %rax, (%rdi)\n"
+    return depth
 
-gen_expr depth (Node _ _ tok) = throwE $ ErrorToken tok "Codegen: invalid expression"
+  FUNCALL name arguments -> do
+    let nargs = length arguments
+    let fregs = reverse $ take nargs argreg
+    depth <- gen_args depth arguments
+    depth <- pop_reg depth fregs nargs
+
+    genLine $"  mov $0, %rax\n"
+    genLine $"  call "++ name ++ "\n"
+
+    return depth
+    where
+      pop_reg depth _ 0 = return depth
+      pop_reg depth (r:regs) count  = do
+        depth <- convertEx $ Right $ pop r depth
+        pop_reg depth regs (count - 1)
+
+      gen_args depth []         = return depth
+      gen_args depth (arg:args) = do
+        depth <- gen_expr depth arg
+        depth <- convertEx $ Right $ push depth
+        gen_args depth args
+
+  NUM a -> do
+    genLine $ "  mov $" ++ show a ++ ", %rax\n"
+    return depth
+
+  UNARY op operand -> case op of
+    Neg -> do
+      depth <- gen_expr depth operand
+      genLine "  neg %rax\n"
+      return depth
+    Addr -> do
+      gen_addr operand
+      return depth
+    Deref -> do
+      depth <- gen_expr depth operand
+      genLine "  mov (%rax), %rax\n"
+      return depth
+
+  BIN_OP op lhs rhs -> do
+    depth <- gen_expr depth rhs
+    depth <- convertEx $ Right $ push depth
+    depth <- gen_expr depth lhs
+    depth <- convertEx $ Right $ pop "%rdi" depth
+    genLines $gen_bin_op op
+    return depth
+
+  _ -> throwE $ ErrorToken tok "Codegen: invalid expression"
 
 gen_stmt :: Node -> ExceptT CodegenError (State CodegenState) ()
 gen_stmt (Node (EXPS_STMT []) _ tok) = return ()
