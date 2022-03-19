@@ -35,6 +35,18 @@ getCurFuncName  = fmap functionName getCurFunc
 getCurLocals :: ExceptT CodegenError (State CodegenState) [Obj]
 getCurLocals  = fmap functionLocals getCurFunc
 
+getVariable :: Obj -> ExceptT CodegenError (State CodegenState) Obj
+getVariable (Obj var _ _) = do
+  locals <- getCurLocals
+  case find f locals of
+    Nothing ->  throwE $ ErrorText ("variable " ++ var ++ " is not declare")
+    Just res -> return res
+    where
+      f (Obj name _ _) = var == name
+
+
+
+
 genLine :: String -> ExceptT CodegenError (State CodegenState) ()
 genLine prog = do
   (code, count, f, depth) <- get
@@ -51,9 +63,15 @@ getCount = do
   put (code, count + 1, f, depth)
   return $ count
 
+convertEx :: (Int -> (Int, [String])) -> ExceptT CodegenError (State CodegenState) ()
+convertEx f = do
+    depth <- getDepth
+    let (d, prog) = f depth
+    setDepth d
+    genLines prog
+
 push_ :: Int -> (Int, [String])
 push_ depth = (depth + 1, ["  push %rax\n"])
-
 
 pop_ :: String -> Int -> (Int, [String])
 pop_ text depth = (depth - 1, ["  pop "++text ++ "\n"])
@@ -62,35 +80,15 @@ push     = convertEx push_
 pop text = convertEx $ pop_ text
 
 gen_addr :: Node -> ExceptT CodegenError (State CodegenState) ()
-gen_addr (Node (VAR (Obj var _ _)) _ tok) = do
-  locals <- getCurLocals
-  case find f locals of
-    Nothing ->  throwE $ ErrorToken tok ("variable " ++ var ++ " is not declare")
-    Just (Obj _ _ offset ) -> do
-      genLine $ "  lea " ++ show offset ++ "(%rbp), %rax\n"
-    where
-      f (Obj name _ _) = var == name
+gen_addr (Node (VAR var) _ _) = do
+  Obj _ _ offset <- getVariable var
+  genLine $ "  lea " ++ show offset ++ "(%rbp), %rax\n"
 
 gen_addr (Node (UNARY Deref node) _ _) = do
-
   setDepth 0
   gen_expr node
-  return ()
 
 gen_addr (Node _ _ tok) = throwE $ ErrorToken tok "Codegen: not a value"
-
-convert :: Either CodegenError [String] -> ExceptT CodegenError (State CodegenState) ()
-convert e = do
-  case e of
-    Right prog -> genLines prog
-    Left err -> throwE err
-
-convertEx :: (Int -> (Int, [String])) -> ExceptT CodegenError (State CodegenState) ()
-convertEx f = do
-    depth <- getDepth
-    let (d, prog) = f depth
-    setDepth d
-    genLines prog
 
 argreg :: [String]
 argreg = ["%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"]
@@ -112,23 +110,16 @@ gen_expr node@(Node kind _ tok) = case kind of
     let nargs = length arguments
     let fregs = reverse $ take nargs argreg
 
-    gen_args arguments
-    pop_reg fregs nargs
+    forM_ arguments gen_arg
+    forM_ fregs pop
 
     genLine $"  mov $0, %rax\n"
     genLine $"  call "++ name ++ "\n"
 
     where
-      pop_reg _ 0 = return ()
-      pop_reg (r:regs) count  = do
-        pop r
-        pop_reg regs (count - 1)
-
-      gen_args []         = return ()
-      gen_args  (arg:args) = do
+      gen_arg arg = do
         gen_expr arg
         push
-        gen_args args
 
   NUM a -> do
     genLine $ "  mov $" ++ show a ++ ", %rax\n"
@@ -260,21 +251,11 @@ assign_lvar_offset (Function node vars _ name args t) = Function node vars' (ali
 gen_block :: [Node] -> ExceptT CodegenError (State CodegenState) ()
 gen_block nodes = forM_ nodes gen_stmt
 
-get_obj :: Obj -> [Obj] -> ExceptT CodegenError (State CodegenState) Obj
-get_obj (Obj var _ _) locals = do
-  case find f locals of
-    Nothing ->  throwE $ ErrorText ("variable " ++ var ++ " is not declare")
-    Just res -> return res
-    where
-      f (Obj name _ _) = var == name
-
-
 codegen_ :: [Function] -> ExceptT CodegenError (State CodegenState) ()
 codegen_ = iter where
   iter [] = return ()
   iter (f:fs) = do
     let f' = assign_lvar_offset f
-    let locals = functionLocals f'
     let body = functionBody f'
     let stack_size = functionStackSize f'
     let name = functionName f'
@@ -290,8 +271,7 @@ codegen_ = iter where
     genLine $ "  sub $" ++ show stack_size ++", %rsp\n"
 
     --Save passed-by-register arguments to the stack
-    add_func_args locals args argreg
-
+    forM_ (zip args argreg) add_func_arg
     -- Traverse the AST to emit assembly
     gen_block body
 
@@ -301,11 +281,9 @@ codegen_ = iter where
     genLine "  ret\n"
 
     iter fs
-  add_func_args _ [] _ = pure ()
-  add_func_args locals (a: args) (r:regs)= do
-    Obj _ _ offset <- get_obj a locals
-    genLine $ "  mov " ++ r ++ ", "++ show offset ++ "(%rbp) \n"
-    add_func_args locals args regs
+  add_func_arg (arg, reg) = do
+    Obj _ _ offset <- getVariable arg
+    genLine $ "  mov " ++ reg ++ ", "++ show offset ++ "(%rbp) \n"
 
 codegen :: [Function] -> Either Error [String]
 codegen f = do
