@@ -41,11 +41,33 @@ data UnOp =
   | Deref    -- unary *
    deriving (Show, Eq)
 
-data Type
+--
+data TypeKind
   = INT
   | PTR Type
+  -- arr  base len
+  | ARRAY Type Int
 --       typy args
   | FUNC Type [(Type, String)]
+  deriving (Show, Eq)
+
+-- Pointer
+
+-- Pointer-to or array-of type. We intentionally use the same member
+-- to represent pointer/array duality in C.
+
+-- In many contexts in which a pointer is expected, we examine this
+-- member instead of "kind" member to determine whether a type is a
+-- pointer or not. That means in many contexts "array of T" is
+-- naturally handled as if it were "pointer to T", as required by
+-- the C spec.
+
+data Type = Type
+  {
+    typeKind :: TypeKind,
+    typeSize :: Int -- sizeof() value
+
+  }
   deriving (Show, Eq)
 
 data Node_ =
@@ -69,13 +91,21 @@ data Node_ =
   | FOR (Maybe Node) (Maybe Node) (Maybe Node) Node
   deriving (Show, Eq)
 
-data Node = Node Node_ Type Token deriving (Show, Eq)
+data Node = Node
+  {
+    nodeNode  :: Node_,
+    nodeType  :: Type,
+    nodeToken :: Token
+  }
+  deriving (Show, Eq)
 
 data Obj = Obj
-    String -- variable name
-    Type   -- type
-    Int    -- offset from RBP
-    deriving (Show, Eq)
+  {
+    objName  :: String, -- variable name
+    objType  :: Type  , -- type
+    objOffset:: Int    -- offset from RBP
+  }
+  deriving (Show, Eq)
 
 data Function = Function {
     functionBody      :: [Node],

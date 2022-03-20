@@ -81,6 +81,26 @@ pop_ text depth = (depth - 1, ["  pop "++text ++ "\n"])
 push     = convertEx push_
 pop text = convertEx $ pop_ text
 
+
+-- Load a value from where %rax is pointing to.
+load :: Type -> ExceptT CodegenError (State CodegenState) ()
+load ty = case typeKind ty of
+    -- If it is an array, do not attempt to load a value to the
+    -- register because in general we can't load an entire array to a
+    -- register. As a result, the result of an evaluation of an array
+    -- becomes not the array itself but the address of the array.
+    -- This is where "array is automatically converted to a pointer to
+    -- the first element of the array in C" occurs.
+    ARRAY _ _ -> return ()
+    _ -> do
+      genLine "  mov (%rax), %rax\n"
+
+store :: ExceptT CodegenError (State CodegenState) ()
+store = do
+    pop "%rdi"
+    genLine "  mov %rax, (%rdi)\n"
+
+
 gen_addr :: Node -> ExceptT CodegenError (State CodegenState) ()
 gen_addr (Node kind _ tok) = case kind of
   VAR var -> do
@@ -97,17 +117,16 @@ argreg :: [String]
 argreg = ["%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"]
 
 gen_expr ::Node ->ExceptT CodegenError (State CodegenState) ()
-gen_expr node@(Node kind _ tok) = case kind of
+gen_expr node@(Node kind ty tok) = case kind of
   VAR _ -> do
     gen_addr node
-    genLine "  mov (%rax), %rax\n"
+    load ty
 
   Assign lhs rhs -> do
     gen_addr lhs
     push
     gen_expr rhs
-    pop "%rdi"
-    genLine "  mov %rax, (%rdi)\n"
+    store
 
   FUNCALL name arguments -> do
     let nargs = length arguments
@@ -135,7 +154,7 @@ gen_expr node@(Node kind _ tok) = case kind of
       gen_addr operand
     Deref -> do
       gen_expr operand
-      genLine "  mov (%rax), %rax\n"
+      load ty
 
   BIN_OP op lhs rhs -> do
     gen_expr rhs
@@ -235,16 +254,23 @@ gen_bin_op ND_LE = [" cmp %rdi, %rax\n",
 -- Round up `n` to the nearest multiple of `align`. For instance,
 -- align_to 5 8  returns 8 and align_to 11  8  returns 16.
 align_to :: Int -> Int -> Int
-align_to n align = ((n + align - 1) `div` align) * align
+align_to align n = ((n + align - 1) `div` align) * align
 
 assign_lvar_offset :: Function -> Function
-assign_lvar_offset (Function node vars _ name args t) = Function node vars' (align_to offset' 16) name args t
+assign_lvar_offset (Function node vars _ name args t) = Function node vars' offset'' name args t
   where
-    (vars', offset') = f vars 8
-    f [] r = ([], r)
-    f ((Obj name t _):vs) offset = ((Obj name t (0 - offset)) : vs', offset'') where
-      (vs', offset'') = f vs (offset + 8)
+    sizes    = map (typeSize . objType) vars
+    offsets  = scanl1 (+) sizes
+    vars'    = map (uncurry change_offset) $ zip vars offsets
+    offset'' = if length vars' == 0
+                  then 0
+                  else ((align_to 16) . last) offsets
 
+
+get_offset (Obj _ _ offset)  = offset
+change_offset (Obj o_name typ _) offset= Obj o_name typ  (0 - offset)
+
+    --f ((Obj name t _):vs) offset = ((Obj name t (0 - offset)) : vs', offset'') where
 gen_block :: [Node] -> ExceptT CodegenError (State CodegenState) ()
 gen_block nodes = forM_ nodes gen_stmt
 

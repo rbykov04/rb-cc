@@ -6,6 +6,7 @@ import System.IO
 import RBCC
 import Codegen
 import Tokenize
+import Type
 import Data.List
 
 head_equal :: [Token] -> TokenKind -> Bool
@@ -97,7 +98,8 @@ join_bin sub bin_ops = do
         Just op -> do
           tok <- popHeadToken
           rhs <- sub
-          join_ (Node (op lhs rhs) INT tok)
+          node <- add_type (op lhs rhs) tok
+          join_ node
         Nothing ->  return lhs
 
 
@@ -120,42 +122,53 @@ mul        = join_bin unary      [("*", BIN_OP Mul), ("/", BIN_OP Div)]
 -- In other words, we need to scale an integer value before adding to a
 -- pointer value. This function takes care of the scaling.
 
-make_offset count tok =  offset where
-  base = Node (NUM 8) INT tok
-  offset = Node (BIN_OP Mul count base) INT tok
+make_offset ty count tok = do
+  base <- add_type (NUM ((typeSize) ty)) tok
+  add_type (BIN_OP Mul count base) tok
 
 new_add  :: Node->Node->Token -> ExceptT Error (State ParserState) Node
-new_add lhs@(Node _ INT _) rhs@(Node _ INT _) tok = do
-  return $ Node (BIN_OP Add lhs rhs) INT tok
+new_add lhs rhs tok = case ((typeKind . nodeType) lhs, (typeKind . nodeType) rhs) of
+  (INT, INT) -> do
+    add_type (BIN_OP Add lhs rhs) tok
 
-new_add lhs@(Node _ (PTR base) _) rhs@(Node _ INT _) tok = do
-  let offset = make_offset rhs tok
-  return $ Node (BIN_OP Add lhs offset) (PTR base) tok
+  ((PTR ty), INT)     -> ptr_math lhs ty rhs tok
+  ((ARRAY ty _), INT) -> ptr_math lhs ty rhs tok
 
-new_add lhs@(Node _ INT _) rhs@(Node _ (PTR base) _) tok = do
-  let offset = make_offset lhs tok
-  return $ Node (BIN_OP Add rhs offset) (PTR base) tok
+  (INT, (ARRAY ty _)) -> ptr_math rhs ty lhs tok
+  (INT, (PTR ty))     -> ptr_math rhs ty lhs tok
 
--- ptr +  ptr
-new_add _ _ t = throwE (ErrorToken t "invalid operands")
+  -- ptr +  ptr
+  _ ->  throwE (ErrorToken tok "invalid operands")
+  where
+    ptr_math ptr ty count token = do
+      offset <- make_offset ty count token
+      add_type (BIN_OP Add ptr offset) token
 
-new_sub  :: Node->Node->Token -> ExceptT Error (State ParserState) Node
-new_sub lhs@(Node _ INT _) rhs@(Node _ INT _) tok = do
-  return $ Node (BIN_OP Sub lhs rhs) INT tok
 
--- ptr - num
-new_sub ptr@(Node _ (PTR base) _) count@(Node _ INT _) tok = do
-  let offset = make_offset count tok
-  return $ Node (BIN_OP Sub ptr offset) (PTR base) tok
+new_sub lhs rhs tok = case ((typeKind . nodeType) lhs, (typeKind . nodeType) rhs) of
+  (INT, INT) -> do
+    add_type (BIN_OP Sub lhs rhs) tok
+
+  ((PTR ty), INT)     -> ptr_math lhs ty rhs tok
+  ((ARRAY ty _), INT) -> ptr_math lhs ty rhs tok
 
 -- ptr - ptr, which returns how many elements are between the two.
-new_sub lhs@(Node _ (PTR _) _) rhs@(Node _ (PTR _) _) tok = do
-  let base = Node (NUM 8) INT tok
-  let num = Node (BIN_OP Sub lhs rhs) INT tok
-  return $ Node (BIN_OP Div num base) INT tok
+  ((PTR tyBase), (PTR _))         -> ptr_diff lhs tyBase rhs tok
+  ((PTR tyBase), (ARRAY _ _))     -> ptr_diff lhs tyBase rhs tok
+  ((ARRAY tyBase _), (PTR _))     -> ptr_diff lhs tyBase rhs tok
+  ((ARRAY tyBase _), (ARRAY _ _)) -> ptr_diff lhs tyBase rhs tok
 
 -- num - ptr
-new_sub _ _ t = throwE (ErrorToken t "invalid operands")
+  _ -> throwE (ErrorToken tok "invalid operands")
+  where
+    ptr_diff a atype b token = do
+      base <- add_type (NUM (typeSize atype)) token
+      num <- add_type (BIN_OP Sub a b) tok
+      add_type (BIN_OP Div (change_type make_int num) base) tok
+
+    ptr_math ptr ty count token = do
+      offset <- make_offset ty count token
+      add_type (BIN_OP Sub ptr offset) token
 
 add  = do
   node <- mul
@@ -179,13 +192,13 @@ add  = do
  -- join_bin mul        [("+", BIN_OP Add), ("-", BIN_OP Sub)]
 
 assign = do
-  lhs@(Node _ lhs_ty _) <- equality
+  lhs <- equality
   kind <- seeHeadTokenKind
   case kind of
     Punct "=" -> do
       tok <- popHeadToken
       rhs <- assign
-      return $ Node (Assign lhs rhs) lhs_ty tok
+      add_type (Assign lhs rhs) tok
     _ -> return lhs
 
 expr       = assign
@@ -200,17 +213,16 @@ unary = do
     Punct "-" -> do
       tok <- popHeadToken
       node <- unary
-      return $ Node (UNARY Neg node) INT tok
+      add_type (UNARY Neg node) tok
     Punct "&" -> do
       tok <- popHeadToken
-      node@(Node _ ty _) <- unary
-      return $ Node (UNARY Addr node) (PTR ty) tok
+      node <- unary
+      add_type (UNARY Addr node) tok
     Punct "*" -> do
       tok <- popHeadToken
-      node@(Node _ ty _) <- unary
-      case ty of
-        PTR base -> return $ Node (UNARY Deref node) base tok
-        _        -> return $ Node (UNARY Deref node) INT tok
+      node <- unary
+      add_type (UNARY Deref node) tok
+
     _ -> primary
 
 
@@ -235,7 +247,7 @@ funcall = do
       skip (Punct "(")
       args <- get_args
       skip (Punct ")")
-      return $ Node (FUNCALL name args) INT ident
+      add_type (FUNCALL name args) ident
     _ -> throwE (ErrorToken ident "expected an ident")
   where
     get_args = do
@@ -264,7 +276,7 @@ primary = do
 
   case kind of
     Num v -> do
-       return $ Node (NUM v) INT t
+       add_type (NUM v) t
     Ident str -> do
       next_kind <- seeHeadTokenKind
       case next_kind of
@@ -275,7 +287,8 @@ primary = do
           fv <- find_var str
           case fv of
             Nothing -> throwE (ErrorToken t "undefined variable")
-            Just var -> return $ Node (VAR var) INT t
+            Just var -> add_type (VAR var) t
+
     Punct "(" -> do
       node <- expr
       skip (Punct ")")
@@ -303,47 +316,65 @@ expr_stmt = do
   if emptyBlock
   then do
     tok <- popHeadToken
-    return $ Node (BLOCK []) INT tok
+    add_type (BLOCK []) tok
   else do
     tok <- seeHeadToken
     node <- expr
     skip (Punct ";")
-    return $ Node (EXPS_STMT node) INT tok
+    add_type (EXPS_STMT node) tok
 
 -- declspec = "int"
 declspec   :: ExceptT Error (State ParserState) Type
 declspec = do
   skip (Keyword "int")
-  return INT
+  return make_int
 
--- type-suffix = ("(" func-params? ")")?
 -- func-params = param ("," param)*
 -- param       = declspec declarator
-type_suffix :: Type -> ExceptT Error (State ParserState) Type
-type_suffix base = do
-  isFunc <- head_equalM (Punct "(")
-  if isFunc
-  then do
-    skip (Punct "(")
-    args <- iter []
-    skip (Punct ")")
-    return $ FUNC base args
-  else return base
+func_params :: Type -> ExceptT Error (State ParserState) Type
+func_params base = do
+  args <- iter []
+  skip (Punct ")")
+  return $ func_type base args
   where
     iter params = do
       isEnd <- head_equalM (Punct ")")
       if isEnd then return params
       else do
-         basety <- declspec
-         arg <- declarator basety
-         isNext <- head_equalM (Punct ",")
-         let res = params ++ [arg]
-         if isNext
-         then do
-           skip (Punct ",")
-           iter res
-         else return res
+          basety <- declspec
+          arg <- declarator basety
+          isNext <- head_equalM (Punct ",")
+          let res = params ++ [arg]
+          if isNext
+          then do
+            skip (Punct ",")
+            iter res
+          else return res
 
+getNumber :: ExceptT Error (State ParserState) Int
+getNumber = do
+   tok <- popHeadToken
+   case tokenKind tok of
+      Num v -> return v
+      _ -> throwE (ErrorToken tok "expected an number")
+
+
+-- type-suffix = (" func-params
+--             | "[" num "]"
+--             | etc
+type_suffix :: Type -> ExceptT Error (State ParserState) Type
+type_suffix base = do
+  kind <- seeHeadTokenKind
+  case kind of
+    Punct "(" -> do
+      skip (Punct "(")
+      func_params base
+    Punct "[" -> do
+      skip (Punct "[")
+      len <- getNumber
+      skip (Punct "]")
+      return $ array_of base len
+    _ -> return base
 
 -- declarator = "*"* ident type-suffix
 declarator :: Type -> ExceptT Error (State ParserState) (Type, String)
@@ -359,10 +390,8 @@ declarator basetype = do
     ptr_wrap base = do
       isPtr <- consume (Punct "*")
       if isPtr
-      then ptr_wrap (PTR base)
+      then ptr_wrap $ pointer_to base
       else return base
-
-
 
 -- declaration = declspec (declarator ("=" expr)? ("," declarator ("=" expr)?)*)? ";"
 declaration = do
@@ -370,7 +399,7 @@ declaration = do
   basety <- declspec
   nodes <- iter basety []
   skip (Punct ";")
-  return $ Node (BLOCK nodes) basety tok
+  add_type (BLOCK nodes) tok
   where
     decl_expr basety nodes = do
       (ty, name) <- declarator basety
@@ -379,10 +408,10 @@ declaration = do
       if isAssign
       then do
         tok <- popHeadToken
-        let lhs = Node (VAR obj) ty tok
+        lhs <- add_type (VAR obj) tok
         rhs <- assign
-        let node = Node (Assign lhs rhs) ty tok
-        let expression  = Node (EXPS_STMT node) INT tok
+        node <- add_type (Assign lhs rhs) tok
+        expression  <- add_type (EXPS_STMT node) tok
         return $ nodes ++ [expression]
       else return nodes
 
@@ -398,7 +427,8 @@ declaration = do
 compound_stmt  = do
   tok <- seeHeadToken
   nodes <- iter []
-  return $ Node (BLOCK nodes) INT tok
+
+  add_type (BLOCK nodes) tok
   where
     iter nodes = do
       endBlock <- head_equalM (Punct "}")
@@ -438,7 +468,7 @@ stmt  = do
     tok <- popHeadToken
     node <-expr
     skip (Punct ";")
-    return $ Node (RETURN node) INT tok
+    add_type (RETURN node) tok
   else if head_equal ts (Keyword "while")
   then do
     tok <- popHeadToken
@@ -446,7 +476,7 @@ stmt  = do
     cond <- expr
     skip (Punct ")")
     body <- stmt
-    return $ Node (FOR Nothing (Just cond) Nothing body) INT tok
+    add_type (FOR Nothing (Just cond) Nothing body) tok
   else if head_equal ts (Keyword "for")
   then do
     tok <- popHeadToken
@@ -460,7 +490,7 @@ stmt  = do
     skip (Punct ")")
 
     body <- stmt
-    return $ Node (FOR (Just ini) cond inc body) INT tok
+    add_type (FOR (Just ini) cond inc body) tok
   else if head_equal ts (Keyword "if")
   then do
     tok <- popHeadToken
@@ -474,13 +504,14 @@ stmt  = do
     then do
       _ <- popHeadToken
       _else <- stmt
-      return $ Node (IF cond _then (Just _else)) INT tok
-    else return $ Node (IF cond _then Nothing) INT tok
+      add_type (IF cond _then (Just _else)) tok
+    else add_type (IF cond _then Nothing) tok
   else if head_equal ts (Punct "{")
   then do
     _ <- popHeadToken
     compound_stmt
   else expr_stmt
+
 
 create_param_lvars :: [(Type,String)] -> ExceptT Error (State ParserState) [Obj]
 create_param_lvars = mapM $ (uncurry . flip) new_lvar
@@ -491,7 +522,7 @@ function = do
   putLocals []
   ty <- declspec
   (ftype, name) <- declarator ty
-  args <- create_args ftype
+  args <- create_args $ typeKind ftype
   skip (Punct "{")
   s <- compound_stmt
   let nodes = [s]
