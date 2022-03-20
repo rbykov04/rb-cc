@@ -14,6 +14,18 @@ func_type ret_type args = Type (FUNC ret_type args) 8
 pointer_to base = Type (PTR base) 8
 make_int = Type INT 8
 
+is_integer :: Type -> Bool
+is_integer t = case typeKind t of
+  INT -> True
+  _   -> False
+
+get_ptr_base :: Type -> Maybe Type
+get_ptr_base t = case typeKind t of
+  PTR   base -> Just base
+  ARRAY base _ -> Just base
+  _   -> Nothing
+
+
 add_type nodeKind tok = case nodeKind of
   UNARY op node -> case op of
     Addr -> case (typeKind. nodeType) node of

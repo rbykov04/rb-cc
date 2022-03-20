@@ -102,7 +102,7 @@ putLocals vars = do
 
 join_bin ::
    ExceptT Error (State ParserState) Node
-   -> [(String, (Node -> Node -> Node_))]
+   -> [(String, Node->Node->Token -> ExceptT Error (State ParserState) Node)]
    -> ExceptT Error (State ParserState) Node
 
 join_bin sub bin_ops = do
@@ -113,26 +113,27 @@ join_bin sub bin_ops = do
       toks <- getTokens
       let tokKind = (tokenKind . head) toks
       case lookup tokKind (map toPunct bin_ops) of
-        Just op -> do
+        Just make_node -> do
           tok <- popHeadToken
           rhs <- sub
-          node <- add_type (op lhs rhs) tok
+          node <-  make_node lhs rhs tok
           join_ node
         Nothing ->  return lhs
 
-
 toPunct (str, op) = (Punct str, op)
 
-equality   = join_bin relational [("==", BIN_OP ND_EQ), ("!=", BIN_OP ND_NE)]
+add_bin op lhs rhs tok = add_type (BIN_OP op lhs rhs) tok
+
+mul        = join_bin unary      [("*", add_bin Mul), ("/", add_bin Div)]
+add        = join_bin mul        [("+", new_add), ("-", new_sub)]
+equality   = join_bin relational [("==", add_bin ND_EQ), ("!=", add_bin ND_NE)]
 relational = join_bin add
   [
-    ("<",  BIN_OP ND_LT),
-    ("<=", BIN_OP ND_LE),
-    (">",  flip (BIN_OP ND_LT)),
-    (">=", flip (BIN_OP ND_LE))
+    ("<",  add_bin ND_LT),
+    ("<=", add_bin ND_LE),
+    (">",  flip (add_bin ND_LT)),
+    (">=", flip (add_bin ND_LE))
   ]
-
-mul        = join_bin unary      [("*", BIN_OP Mul), ("/", BIN_OP Div)]
 
 -- In C, `+` operator is overloaded to perform the pointer arithmetic.
 -- If p is a pointer, p+n adds not n but sizeof(*p)*n to the value of p,
@@ -144,70 +145,38 @@ make_offset ty count tok = do
   base <- add_type (NUM ((typeSize) ty)) tok
   add_type (BIN_OP Mul count base) tok
 
+ptr_math op ptr ty count token = do
+  offset <- make_offset ty count token
+  add_type (BIN_OP op ptr offset) token
+
+
 new_add  :: Node->Node->Token -> ExceptT Error (State ParserState) Node
-new_add lhs rhs tok = case ((typeKind . nodeType) lhs, (typeKind . nodeType) rhs) of
-  (INT, INT) -> do
-    add_type (BIN_OP Add lhs rhs) tok
+new_add lhs rhs tok
+  | is_integer (nodeType rhs) && is_integer (nodeType lhs) = add_type (BIN_OP Add lhs rhs) tok
+  | otherwise =  case ((get_ptr_base . nodeType) lhs, (get_ptr_base . nodeType) rhs) of
 
-  ((PTR ty), INT)     -> ptr_math lhs ty rhs tok
-  ((ARRAY ty _), INT) -> ptr_math lhs ty rhs tok
-
-  (INT, (ARRAY ty _)) -> ptr_math rhs ty lhs tok
-  (INT, (PTR ty))     -> ptr_math rhs ty lhs tok
+  ((Just tyBase), Nothing)  -> ptr_math Add lhs tyBase rhs tok
+  (Nothing, (Just tyBase))  -> ptr_math Add rhs tyBase lhs tok
 
   -- ptr +  ptr
   _ ->  throwE (ErrorToken tok "invalid operands")
-  where
-    ptr_math ptr ty count token = do
-      offset <- make_offset ty count token
-      add_type (BIN_OP Add ptr offset) token
 
+new_sub  :: Node->Node->Token -> ExceptT Error (State ParserState) Node
+new_sub lhs rhs tok
+  | is_integer (nodeType rhs) && is_integer (nodeType lhs) = add_type (BIN_OP Sub lhs rhs) tok
+  | otherwise =  case ((get_ptr_base . nodeType) lhs, (get_ptr_base . nodeType) rhs) of
+    ((Just tyBase), Nothing)  -> ptr_math Sub lhs tyBase rhs tok
 
-new_sub lhs rhs tok = case ((typeKind . nodeType) lhs, (typeKind . nodeType) rhs) of
-  (INT, INT) -> do
-    add_type (BIN_OP Sub lhs rhs) tok
+  -- ptr - ptr, which returns how many elements are between the two.
+    ((Just tyBase), (Just _)) -> ptr_diff lhs tyBase rhs tok
+  -- num - ptr
+    _ -> throwE (ErrorToken tok "invalid operands")
+    where
+      ptr_diff a atype b token = do
+        base <- add_type (NUM (typeSize atype)) token
+        num <- add_type (BIN_OP Sub a b) tok
+        add_type (BIN_OP Div (change_type make_int num) base) tok
 
-  ((PTR ty), INT)     -> ptr_math lhs ty rhs tok
-  ((ARRAY ty _), INT) -> ptr_math lhs ty rhs tok
-
--- ptr - ptr, which returns how many elements are between the two.
-  ((PTR tyBase), (PTR _))         -> ptr_diff lhs tyBase rhs tok
-  ((PTR tyBase), (ARRAY _ _))     -> ptr_diff lhs tyBase rhs tok
-  ((ARRAY tyBase _), (PTR _))     -> ptr_diff lhs tyBase rhs tok
-  ((ARRAY tyBase _), (ARRAY _ _)) -> ptr_diff lhs tyBase rhs tok
-
--- num - ptr
-  _ -> throwE (ErrorToken tok "invalid operands")
-  where
-    ptr_diff a atype b token = do
-      base <- add_type (NUM (typeSize atype)) token
-      num <- add_type (BIN_OP Sub a b) tok
-      add_type (BIN_OP Div (change_type make_int num) base) tok
-
-    ptr_math ptr ty count token = do
-      offset <- make_offset ty count token
-      add_type (BIN_OP Sub ptr offset) token
-
-add  = do
-  node <- mul
-  join_ node
-  where
-    join_ lhs = do
-      kind <- seeHeadTokenKind
-      case kind of
-        Punct "+" -> do
-          tok <- popHeadToken
-          rhs <- mul
-          n_ <- new_add lhs rhs tok
-          join_ n_
-        Punct "-" -> do
-          tok <- popHeadToken
-          rhs <- mul
-          n_ <- new_sub lhs rhs tok
-          join_ $ n_
-        _ -> return lhs
-
- -- join_bin mul        [("+", BIN_OP Add), ("-", BIN_OP Sub)]
 
 assign = do
   lhs <- equality
@@ -225,24 +194,16 @@ expr       = assign
 unary = do
   kind <- seeHeadTokenKind
   case kind of
-    Punct "+" -> do
-      _ <- popHeadToken
-      unary
-    Punct "-" -> do
-      tok <- popHeadToken
-      node <- unary
-      add_type (UNARY Neg node) tok
-    Punct "&" -> do
-      tok <- popHeadToken
-      node <- unary
-      add_type (UNARY Addr node) tok
-    Punct "*" -> do
-      tok <- popHeadToken
-      node <- unary
-      add_type (UNARY Deref node) tok
-
+    Punct "+" -> popHeadToken >> unary
+    Punct "-" -> add_unary_type Neg
+    Punct "&" -> add_unary_type Addr
+    Punct "*" -> add_unary_type Deref
     _ -> primary
-
+    where
+      add_unary_type op = do
+        tok <- popHeadToken
+        node <- unary
+        add_type (UNARY op node) tok
 
 find_var :: String -> ExceptT Error (State ParserState) (Maybe Obj)
 find_var var = do
@@ -306,7 +267,6 @@ primary = do
           case fv of
             Nothing -> throwE (ErrorToken t "undefined variable")
             Just var -> add_type (VAR var) t
-
     Punct "(" -> do
       node <- expr
       skip (Punct ")")
@@ -375,7 +335,6 @@ getNumber = do
    case tokenKind tok of
       Num v -> return v
       _ -> throwE (ErrorToken tok "expected an number")
-
 
 -- type-suffix = (" func-params
 --             | "[" num "]"
