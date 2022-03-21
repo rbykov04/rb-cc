@@ -337,7 +337,7 @@ getNumber = do
       _ -> throwE (ErrorToken tok "expected an number")
 
 -- type-suffix = (" func-params
---             | "[" num "]"
+--             | "[" num "]" type-suffix
 --             | etc
 type_suffix :: Type -> ExceptT Error (State ParserState) Type
 type_suffix base = do
@@ -350,7 +350,8 @@ type_suffix base = do
       skip (Punct "[")
       len <- getNumber
       skip (Punct "]")
-      return $ array_of base len
+      node <- type_suffix base
+      return $ array_of node len
     _ -> return base
 
 -- declarator = "*"* ident type-suffix
