@@ -76,6 +76,7 @@ equality      :: ExceptT Error (State ParserState) Node
 relational    :: ExceptT Error (State ParserState) Node
 add           :: ExceptT Error (State ParserState) Node
 mul           :: ExceptT Error (State ParserState) Node
+postfix       :: ExceptT Error (State ParserState) Node
 
 
 
@@ -191,6 +192,7 @@ assign = do
 expr       = assign
 
 -- unary = ("+" | "-" | "*" | "&") unary
+--         | postfix
 unary = do
   kind <- seeHeadTokenKind
   case kind of
@@ -198,7 +200,7 @@ unary = do
     Punct "-" -> add_unary_type Neg
     Punct "&" -> add_unary_type Addr
     Punct "*" -> add_unary_type Deref
-    _ -> primary
+    _ -> postfix
     where
       add_unary_type op = do
         tok <- popHeadToken
@@ -353,6 +355,24 @@ type_suffix base = do
       node <- type_suffix base
       return $ array_of node len
     _ -> return base
+
+-- postfix = primary ("[" expr "]")
+postfix = do
+  node <- primary
+  iter node
+  where
+    iter node = do
+      kind <- seeHeadTokenKind
+      case kind of
+        Punct "[" -> do
+          -- x[y] is short for *(x+y)
+          tok <- popHeadToken
+          idx <- expr
+          ptr <- new_add node idx tok
+          node' <- add_type (UNARY Deref ptr) tok
+          skip (Punct "]")
+          iter node'
+        _ -> return node
 
 -- declarator = "*"* ident type-suffix
 declarator :: Type -> ExceptT Error (State ParserState) (Type, String)
