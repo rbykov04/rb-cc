@@ -249,7 +249,7 @@ funcall = do
         f_iter $ args ++ [arg]
 
 
--- primary = "(" expr ")" | ident args? | num
+-- primary = "(" expr ")" | ident args? | num | "sizeof" unary
 -- args = "(" ")"
 primary = do
   (t@(Token kind _ _): ts) <- getTokens
@@ -273,6 +273,9 @@ primary = do
       node <- expr
       skip (Punct ")")
       return node
+    Keyword "sizeof" -> do
+      node <- unary
+      add_type (NUM ((size_of . nodeType) node)) t
     _ -> throwE (ErrorToken t "expected an expression")
 
 consume :: TokenKind -> ExceptT Error (State ParserState) Bool
