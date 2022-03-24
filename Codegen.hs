@@ -5,7 +5,7 @@ import Control.Monad.Trans.Except
 import Control.Monad.State
 
 type CodegenError = Error
-type CodegenState = ([String], Int, Maybe Function, Int)
+type CodegenState = ([String], Int, Maybe Obj, Int)
 
 getDepth :: ExceptT CodegenError (State CodegenState) Int
 getDepth = do
@@ -22,12 +22,12 @@ assert_depth_is_0 = do
   d <- getDepth
   unless (d==0) $ throwE $ ErrorText ("depth is not 0")
 
-setCurFunc :: Function -> ExceptT CodegenError (State CodegenState) ()
+setCurFunc :: Obj -> ExceptT CodegenError (State CodegenState) ()
 setCurFunc func = do
   (code, count, _, depth) <- get
   put (code, count, Just func, depth)
 
-getCurFunc :: ExceptT CodegenError (State CodegenState) Function
+getCurFunc :: ExceptT CodegenError (State CodegenState) Obj
 getCurFunc  = do
   (_, _, myabe_f, _) <- get
   case myabe_f of
@@ -35,19 +35,20 @@ getCurFunc  = do
     Just f -> return f
 
 getCurFuncName :: ExceptT CodegenError (State CodegenState) String
-getCurFuncName  = fmap functionName getCurFunc
+getCurFuncName  = fmap objName getCurFunc
 
 getCurLocals :: ExceptT CodegenError (State CodegenState) [Obj]
-getCurLocals  = fmap functionLocals getCurFunc
+getCurLocals  = fmap objLocals getCurFunc
 
 getVariable :: Obj -> ExceptT CodegenError (State CodegenState) Obj
-getVariable (Obj var _ _) = do
+getVariable var = do
   locals <- getCurLocals
   case find f locals of
-    Nothing ->  throwE $ ErrorText ("variable " ++ var ++ " is not declare")
+    Nothing ->  throwE $ ErrorText ("variable " ++ objName var ++ " is not declare")
     Just res -> return res
     where
-      f (Obj name _ _) = var == name
+      f o = objName var == objName o
+
 
 genLine :: String -> ExceptT CodegenError (State CodegenState) ()
 genLine prog = do
@@ -104,7 +105,8 @@ store = do
 gen_addr :: Node -> ExceptT CodegenError (State CodegenState) ()
 gen_addr (Node kind _ tok) = case kind of
   VAR var -> do
-    Obj _ _ offset <- getVariable var
+    obj <- getVariable var
+    let offset = objOffset obj
     genLine $ "  lea " ++ show offset ++ "(%rbp), %rax\n"
 
   UNARY Deref node -> do
@@ -256,9 +258,10 @@ gen_bin_op ND_LE = [" cmp %rdi, %rax\n",
 align_to :: Int -> Int -> Int
 align_to align n = ((n + align - 1) `div` align) * align
 
-assign_lvar_offset :: Function -> Function
-assign_lvar_offset (Function node vars _ name args t) = Function node vars' offset'' name args t
+assign_lvar_offset :: Obj -> Obj
+assign_lvar_offset obj = obj {objLocals = vars',  objOffset = offset''}
   where
+    vars     = objLocals obj
     sizes    = map (typeSize . objType) vars
     offsets  = scanl1 (+) sizes
     vars'    = map (uncurry change_offset) $ zip vars offsets
@@ -267,22 +270,21 @@ assign_lvar_offset (Function node vars _ name args t) = Function node vars' offs
                   else ((align_to 16) . last) offsets
 
 
-get_offset (Obj _ _ offset)  = offset
-change_offset (Obj o_name typ _) offset= Obj o_name typ  (0 - offset)
+change_offset obj offset = obj {objOffset= (0 - offset)}
 
     --f ((Obj name t _):vs) offset = ((Obj name t (0 - offset)) : vs', offset'') where
 gen_block :: [Node] -> ExceptT CodegenError (State CodegenState) ()
 gen_block nodes = forM_ nodes gen_stmt
 
-codegen_ :: [Function] -> ExceptT CodegenError (State CodegenState) ()
+codegen_ :: [Obj] -> ExceptT CodegenError (State CodegenState) ()
 codegen_ = iter where
   iter [] = return ()
   iter (f:fs) = do
     let f' = assign_lvar_offset f
-    let body = functionBody f'
-    let stack_size = functionStackSize f'
-    let name = functionName f'
-    let args = functionArgs f'
+    let body = objBody f'
+    let stack_size = objStackSize f'
+    let name = objName f'
+    let args = objArgs f'
 
     setCurFunc f'
 
@@ -305,10 +307,11 @@ codegen_ = iter where
 
     iter fs
   add_func_arg (arg, reg) = do
-    Obj _ _ offset <- getVariable arg
+    obj <- getVariable arg
+    let offset = objOffset obj
     genLine $ "  mov " ++ reg ++ ", "++ show offset ++ "(%rbp) \n"
 
-codegen :: [Function] -> Either Error [String]
+codegen :: [Obj] -> Either Error [String]
 codegen f = do
   let (r,(code, _, _, _)) = runState (runExceptT (codegen_ f)) ([], 1, Nothing, 0)
   case r of

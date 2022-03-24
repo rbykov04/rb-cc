@@ -101,18 +101,15 @@ data Node = Node
 
 data Obj = Obj
   {
-    objName  :: String, -- variable name
-    objType  :: Type  , -- type
-    objOffset:: Int    -- offset from RBP
+    objName       :: String, -- variable name
+    objType       :: Type  , -- type
+    objOffset     :: Int   , -- offset from RBP
+    objIsLocal    :: Bool  , -- local or global/function
+    objIsFunction :: Bool  , -- global or function
+    objBody       :: [Node],
+    objLocals     :: [Obj] ,
+    objStackSize  :: Int,
+    objArgs       :: [Obj]
   }
   deriving (Show, Eq)
 
-data Function = Function {
-    functionBody      :: [Node],
-    functionLocals    :: [Obj],
-    functionStackSize :: Int,
-    functionName      :: String,
-    functionArgs      :: [Obj],
-    functionType      :: Type
-  }
-  deriving (Show, Eq)

@@ -211,12 +211,12 @@ find_var :: String -> ExceptT Error (State ParserState) (Maybe Obj)
 find_var var = do
   vars <- getLocals
   return (find f vars) where
-    f (Obj name _ _) = var == name
+    f obj = var == objName obj
 
 new_lvar :: String -> Type -> ExceptT Error (State ParserState) Obj
 new_lvar name t = do
   vars <- getLocals
-  let v = Obj name t 0
+  let v = Obj name t 0 True False [] [] 0 []
   putLocals (v:vars)
   return v
 
@@ -517,7 +517,7 @@ stmt  = do
 create_param_lvars :: [(Type,String)] -> ExceptT Error (State ParserState) [Obj]
 create_param_lvars = mapM $ (uncurry . flip) new_lvar
 
-function :: ExceptT Error (State ParserState) Function
+function :: ExceptT Error (State ParserState) Obj
 function = do
   t <- seeHeadToken
   putLocals []
@@ -529,7 +529,7 @@ function = do
   let nodes = [s]
 
   locals <- getLocals
-  return $ Function nodes locals 208 name args ftype
+  return $ Obj name ftype 0 False True nodes locals 208 args
   where
     create_args ty =
       case ty of
@@ -539,7 +539,7 @@ function = do
           throwE (ErrorToken t "incorrect type for func")
 
 -- program = function-definition*
-program :: ExceptT Error (State ParserState) [Function]
+program :: ExceptT Error (State ParserState) [Obj]
 program = iter []
   where
     iter funcs = do
@@ -550,7 +550,7 @@ program = iter []
         f <- function
         iter $ funcs ++ [f]
 
-parse :: [Token] -> Either Error ([Function], [Token])
+parse :: [Token] -> Either Error ([Obj], [Token])
 parse toks = do
   let (r,s') = runState (runExceptT program) (toks, [])
   case r of

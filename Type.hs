@@ -56,8 +56,8 @@ add_type nodeKind tok = case nodeKind of
     let ty = nodeType lhs
     return $ Node nodeKind ty tok
 
-  VAR (Obj _ ty _) -> do
-    return $ Node nodeKind ty tok
+  VAR obj -> do
+    return $ Node nodeKind (objType obj) tok
 
   _ -> return $ Node nodeKind make_int tok
 
