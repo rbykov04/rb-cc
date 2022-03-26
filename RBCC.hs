@@ -53,7 +53,7 @@ data TypeKind
   -- arr  base len
   | ARRAY Type Int
 --       typy args locals
-  | FUNC Type [Int] [Int]
+  | FUNC Type [Int] [Int] Int
   --  FUNC Type [(Type, String)]
   deriving (Show, Eq)
 
@@ -113,8 +113,7 @@ data Obj = Obj
     objOffset     :: Int   , -- offset from RBP
     objIsLocal    :: Bool  , -- local or global/function
     objBody       :: [Node],
-    objLocals     :: [Int] ,
-    objStackSize  :: Int
+    objLocals     :: [Int]
   }
   deriving (Show, Eq)
 

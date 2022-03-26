@@ -228,15 +228,17 @@ unary = do
 
 find_var :: String -> ExceptT Error (State ParserState) (Maybe Obj)
 find_var var = do
-  vars <- getLocals
-  return (find f vars) where
+  gvars <- getGlobals
+  lvars <- getLocals
+  return $ find f (gvars ++ lvars)
+  where
     f obj = var == objName obj
 
 new_var :: String -> Type -> Bool -> ExceptT Error (State ParserState) Obj
 new_var name t isLocal = do
   vars <- getVars
   let key = IntMap.size vars + 1
-  let v = Obj key name t 0 isLocal [] [] 208
+  let v = Obj key name t 0 isLocal [] []
 
   putVars (IntMap.insert key v vars)
   return v
@@ -575,7 +577,18 @@ function = do
   where
     updateFunc locals nodes obj = obj {objLocals = locals, objBody = nodes};
 
-  -- return $ Obj (-1) name ftype 0 False nodes locals 208
+isFunction :: ExceptT Error (State ParserState) Bool
+isFunction = do
+  tok <- seeHeadTokenKind
+  case tok of
+    Punct ";" -> return False
+    _ -> do
+      _ <- popHeadToken
+      (ftype, _) <- declarator make_int
+      case typeKind ftype of
+        FUNC _ _ _ _ -> return True
+        _            -> return False
+
 
 -- program = function-definition*
 program :: ExceptT Error (State ParserState) ()
@@ -584,8 +597,34 @@ program = do
   if isEnd
   then return ()
   else do
-    function
-    program
+    toks <- getTokens
+    isFunc <- isFunction
+    putTokens toks
+    if isFunc
+    then do
+      function
+      program
+    else do
+      global_variable
+      program
+
+global_variable :: ExceptT Error (State ParserState) ()
+global_variable = do
+  ty <- declspec
+  iter ty
+  skip (Punct ";")
+  where
+    iter base = do
+      (t, name) <- declarator base
+      _ <- new_gvar name t
+      tok <- seeHeadTokenKind
+      case tok of
+        Punct "," -> do
+          skip (Punct ",")
+          iter base
+        _         -> pure ()
+
+
 
 parse :: [Token] -> Either Error ([Obj], [Token], (IntMap Obj))
 parse toks = do

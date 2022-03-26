@@ -22,8 +22,6 @@ updateVar f key = do
   let storage' = IntMap.adjust f key storage
   put (a, b, c, d, storage')
 
-
-
 getDepth :: ExceptT CodegenError (State CodegenState) Int
 getDepth = do
   (_, _, _, depth, _) <- get
@@ -114,7 +112,10 @@ gen_addr (Node kind _ tok) = case kind of
   VAR key -> do
     obj <- getVar key
     let offset = objOffset obj
-    genLine $ "  lea " ++ show offset ++ "(%rbp), %rax\n"
+    if objIsLocal obj then
+      genLine $ "  lea " ++ show offset ++ "(%rbp), %rax\n"
+    else
+      genLine $ "  lea " ++ objName obj ++ "(%rip), %rax\n"
 
   UNARY Deref node -> do
     setDepth 0
@@ -265,64 +266,90 @@ gen_bin_op ND_LE = [" cmp %rdi, %rax\n",
 align_to :: Int -> Int -> Int
 align_to align n = ((n + align - 1) `div` align) * align
 
-assign_lvar_offset :: Obj -> ExceptT CodegenError (State CodegenState) Int
-assign_lvar_offset obj = do
-    let vars = objLocals obj
-    vars' <-  mapM getVar vars
-    let sizes    = map (typeSize . objType) vars'
-    let offsets  = scanl1 (+) sizes
-    forM_ (zip vars' offsets) change_offset
-    let offset'' = if length vars == 0
-                  then 0
-                  else ((align_to 16) . last) offsets
-    return offset''
+assign_lvar_offset :: Int -> ExceptT CodegenError (State CodegenState) ()
+assign_lvar_offset key = do
+    func <-getVar key
+    case (typeKind . objType) func of
+      FUNC ret args params _ -> do
+        let vars = objLocals func
+        vars' <-  mapM getVar vars
+        let sizes    = map (typeSize . objType) vars'
+        let offsets  = scanl1 (+) sizes
+        forM_ (zip vars' offsets) change_offset
+        let offset'' = if length vars == 0
+                      then 0
+                      else ((align_to 16) . last) offsets
+        updateVar (change_ftype (Type (FUNC ret args params offset'') 8)) key
+      _ -> pure()
 
 
 change_offset (o,offset) = updateVar (change_offset' offset) (objKey o)
 change_offset' offset obj = obj {objOffset= (0 - offset)}
+change_ftype t obj = obj {objType = t}
 
     --f ((Obj name t _):vs) offset = ((Obj name t (0 - offset)) : vs', offset'') where
 gen_block :: [Node] -> ExceptT CodegenError (State CodegenState) ()
 gen_block nodes = forM_ nodes gen_stmt
 
-codegen_ :: [Obj] -> ExceptT CodegenError (State CodegenState) ()
-codegen_ = iter where
-  iter [] = return ()
-  iter (o:obj) = do
-    f <- (getVar . objKey) o
-    stack_size <- assign_lvar_offset f
-    let body = objBody f
-    let name = objName f
-    let (FUNC _ args _) = (typeKind . objType) f
 
-    setCurFunc f
+emit_data :: Int -> ExceptT CodegenError (State CodegenState) ()
+emit_data prog = do
+    o <- getVar prog
+    let name = objName o
+    let size = (typeSize . objType) o
+    case (typeKind . objType) o of
+      FUNC _ _ _ _ -> pure ()
+      _  -> do
+        genLine $ "  .data\n"
+        genLine $ "  .globl " ++ name ++ "\n"
+        genLine $ name ++ ":\n"
+        genLine $ "  .zero " ++ show size ++ "\n"
 
-    genLine $ "  .globl " ++ name ++ "\n"
-    genLine $ name ++ ":\n"
-    -- Prologue
-    genLine "  push %rbp\n"
-    genLine "  mov %rsp, %rbp\n"
-    genLine $ "  sub $" ++ show stack_size ++", %rsp\n"
+emit_text :: Int -> ExceptT CodegenError (State CodegenState) ()
+emit_text o = do
+    f <- getVar o
+    case (typeKind . objType) f of
+      FUNC _ args _ stack_size -> do
+        let body = objBody f
+        let name = objName f
 
-    --Save passed-by-register arguments to the stack
-    forM_ (zip args argreg) add_func_arg
-    -- Traverse the AST to emit assembly
-    gen_block body
+        setCurFunc f
 
-    genLine $".L.return." ++ name ++ ":\n"
-    genLine "  mov %rbp, %rsp\n"
-    genLine "  pop %rbp\n"
-    genLine "  ret\n"
+        genLine $ "  .globl " ++ name ++ "\n"
+        genLine $ "  .text\n"
+        genLine $ name ++ ":\n"
+        -- Prologue
+        genLine "  push %rbp\n"
+        genLine "  mov %rsp, %rbp\n"
+        genLine $ "  sub $" ++ show stack_size ++", %rsp\n"
 
-    iter obj
+        --Save passed-by-register arguments to the stack
+        forM_ (zip args argreg) add_func_arg
+        -- Traverse the AST to emit assembly
+        gen_block body
+
+        genLine $".L.return." ++ name ++ ":\n"
+        genLine "  mov %rbp, %rsp\n"
+        genLine "  pop %rbp\n"
+        genLine "  ret\n"
+      _  -> pure ()
+  where
   add_func_arg (arg, reg) = do
     obj <- getVar arg
     let offset = objOffset obj
     genLine $ "  mov " ++ reg ++ ", "++ show offset ++ "(%rbp) \n"
 
+
+codegen_ :: [Int] -> ExceptT CodegenError (State CodegenState) ()
+codegen_ vars = do
+      mapM_ assign_lvar_offset vars
+      mapM_ emit_data vars
+      mapM_ emit_text vars
+
 codegen :: [Obj] -> IntMap Obj-> Either Error [String]
 codegen f storage= do
-  let (r,(code, _, _, _, _)) = runState (runExceptT (codegen_ f)) ([], 1, Nothing, 0, storage)
+  let vars = map objKey f
+  let (r,(code, _, _, _, _)) = runState (runExceptT (codegen_ vars)) ([], 1, Nothing, 0, storage)
   case r of
     Left e -> Left e
     Right _ -> return code
