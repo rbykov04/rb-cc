@@ -17,8 +17,6 @@
 -- parser.
 
 module Parse where
-import Control.Monad.Trans.Except
-import Control.Monad.State
 import System.Environment
 import System.IO
 import RBCC
@@ -27,6 +25,10 @@ import Tokenize
 import Type
 import Data.List
 
+import Control.Monad.Trans.Except
+import Control.Monad.State
+import Data.IntMap.Lazy (IntMap, (!))
+import qualified Data.IntMap.Lazy as IntMap
 head_equal :: [Token] -> TokenKind -> Bool
 head_equal ((Token (Punct a) _ _) : _) (Punct b) = a == b
 head_equal ((Token (Ident a) _ _) : _) (Ident b) = a == b
@@ -60,7 +62,6 @@ seeHeadTokenKind = do
   tok <- seeHeadToken
   return $ tokenKind tok
 
-type ParserState = ([Token], [Obj])
 
 stmt          :: ExceptT Error (State ParserState) Node
 expr_stmt     :: ExceptT Error (State ParserState) Node
@@ -83,23 +84,41 @@ postfix       :: ExceptT Error (State ParserState) Node
 getTokens :: ExceptT Error (State ParserState) [Token]
 getTokens = do
   r <- get
-  return $ fst r
+  return $ fst' r
 
 putTokens :: [Token] -> ExceptT Error (State ParserState) ()
 putTokens toks = do
   r <- get
-  put (toks, snd r)
+  put (toks, snd' r, thrd' r)
 
 
 getLocals :: ExceptT Error (State ParserState) [Obj]
 getLocals = do
   r <- get
-  return $ snd r
+  return $ (fst. snd') r
 
 putLocals :: [Obj] -> ExceptT Error (State ParserState) ()
 putLocals vars = do
   r <- get
-  put (fst r, vars)
+  put (fst' r, (vars, (snd. snd') r), thrd' r)
+
+getGlobals :: ExceptT Error (State ParserState) [Obj]
+getGlobals = do
+  r <- get
+  return $ (snd. snd') r
+
+putGlobals :: [Obj] -> ExceptT Error (State ParserState) ()
+putGlobals vars = do
+  r <- get
+  put (fst' r, (((fst. snd') r), vars), thrd' r)
+
+putVars :: IntMap Obj -> ExceptT Error (State ParserState) ()
+putVars vars = do
+  r <- get
+  put (fst' r, snd' r, vars)
+
+
+
 
 join_bin ::
    ExceptT Error (State ParserState) Node
@@ -213,12 +232,34 @@ find_var var = do
   return (find f vars) where
     f obj = var == objName obj
 
-new_lvar :: String -> Type -> ExceptT Error (State ParserState) Obj
-new_lvar name t = do
-  vars <- getLocals
-  let v = Obj name t 0 True False [] [] 0 []
-  putLocals (v:vars)
+new_var :: String -> Type -> Bool -> ExceptT Error (State ParserState) Obj
+new_var name t isLocal = do
+  vars <- getVars
+  let key = IntMap.size vars + 1
+  let v = Obj key name t 0 isLocal [] [] 208
+
+  putVars (IntMap.insert key v vars)
   return v
+
+update_var :: (Obj -> Obj) ->Int -> ExceptT Error (State ParserState) ()
+update_var f key= do
+  vars <- getVars
+  let vars' = IntMap.adjust f key vars
+  putVars vars'
+
+new_lvar :: String -> Type -> ExceptT Error (State ParserState) Int
+new_lvar name t = do
+  v <- new_var name t True
+  vars <- getLocals
+  putLocals (v:vars)
+  return $ objKey v
+
+new_gvar :: String -> Type -> ExceptT Error (State ParserState) Int
+new_gvar name t = do
+  v <- new_var name t False
+  vars <- getGlobals
+  putGlobals (v:vars)
+  return $ objKey v
 
 -- funcall == ident "(" (assign ("," assign)*)? ")"
 funcall = do
@@ -268,7 +309,7 @@ primary = do
           fv <- find_var str
           case fv of
             Nothing -> throwE (ErrorToken t "undefined variable")
-            Just var -> add_type (VAR var) t
+            Just var -> add_type (VAR (objKey var)) t
     Punct "(" -> do
       node <- expr
       skip (Punct ")")
@@ -312,13 +353,18 @@ declspec = do
   skip (Keyword "int")
   return make_int
 
+create_param_lvars :: [(Type,String)] -> ExceptT Error (State ParserState) [Int]
+create_param_lvars = mapM $ (uncurry . flip) new_lvar
+
+
 -- func-params = param ("," param)*
 -- param       = declspec declarator
 func_params :: Type -> ExceptT Error (State ParserState) Type
 func_params base = do
   args <- iter []
   skip (Punct ")")
-  return $ func_type base args
+  args' <- create_param_lvars args
+  return $ func_type base args'
   where
     iter params = do
       isEnd <- head_equalM (Punct ")")
@@ -404,12 +450,12 @@ declaration = do
   where
     decl_expr basety nodes = do
       (ty, name) <- declarator basety
-      obj <- new_lvar name ty
+      key <- new_lvar name ty
       isAssign <- head_equalM (Punct "=")
       if isAssign
       then do
         tok <- popHeadToken
-        lhs <- add_type (VAR obj) tok
+        lhs <- add_type (VAR key) tok
         rhs <- assign
         node <- add_type (Assign lhs rhs) tok
         expression  <- add_type (EXPS_STMT node) tok
@@ -514,45 +560,36 @@ stmt  = do
   else expr_stmt
 
 
-create_param_lvars :: [(Type,String)] -> ExceptT Error (State ParserState) [Obj]
-create_param_lvars = mapM $ (uncurry . flip) new_lvar
-
-function :: ExceptT Error (State ParserState) Obj
+function :: ExceptT Error (State ParserState) ()
 function = do
-  t <- seeHeadToken
   putLocals []
   ty <- declspec
   (ftype, name) <- declarator ty
-  args <- create_args $ typeKind ftype
   skip (Punct "{")
   s <- compound_stmt
   let nodes = [s]
 
   locals <- getLocals
-  return $ Obj name ftype 0 False True nodes locals 208 args
+  key <- new_gvar name ftype
+  update_var (updateFunc (map objKey locals) nodes) key
   where
-    create_args ty =
-      case ty of
-        FUNC _ args -> create_param_lvars args
-        _ -> do
-          t <- seeHeadToken
-          throwE (ErrorToken t "incorrect type for func")
+    updateFunc locals nodes obj = obj {objLocals = locals, objBody = nodes};
+
+  -- return $ Obj (-1) name ftype 0 False nodes locals 208
 
 -- program = function-definition*
-program :: ExceptT Error (State ParserState) [Obj]
-program = iter []
-  where
-    iter funcs = do
-      isEnd <- head_equalM EOF
-      if isEnd
-      then return funcs
-      else do
-        f <- function
-        iter $ funcs ++ [f]
+program :: ExceptT Error (State ParserState) ()
+program = do
+  isEnd <- head_equalM EOF
+  if isEnd
+  then return ()
+  else do
+    function
+    program
 
-parse :: [Token] -> Either Error ([Obj], [Token])
+parse :: [Token] -> Either Error ([Obj], [Token], (IntMap Obj))
 parse toks = do
-  let (r,s') = runState (runExceptT program) (toks, [])
+  let (r, (tokens, (_, globals), storage)) = runState (runExceptT program) (toks, ([], []), IntMap.empty )
   case r of
     Left e -> Left e
-    Right out -> return (out, fst s')
+    Right _ -> return (globals, tokens, storage)

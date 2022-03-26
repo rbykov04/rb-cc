@@ -4,18 +4,35 @@ import Data.List
 import Control.Monad.Trans.Except
 import Control.Monad.State
 
+import Data.IntMap.Lazy (IntMap, (!))
+import qualified Data.IntMap.Lazy as IntMap
+
 type CodegenError = Error
-type CodegenState = ([String], Int, Maybe Obj, Int)
+type CodegenState = ([String], Int, Maybe Obj, Int, (IntMap Obj))
+
+getVar :: Int ->ExceptT CodegenError (State CodegenState) Obj
+getVar key = do
+  (_, _, _, _, storage) <- get
+  return $ storage ! key
+
+updateVar :: (Obj -> Obj) -> Int ->ExceptT CodegenError (State CodegenState) ()
+updateVar f key = do
+  (a, b, c, d, storage) <- get
+
+  let storage' = IntMap.adjust f key storage
+  put (a, b, c, d, storage')
+
+
 
 getDepth :: ExceptT CodegenError (State CodegenState) Int
 getDepth = do
-  (_, _, _, depth) <- get
+  (_, _, _, depth, _) <- get
   return depth
 
 setDepth :: Int -> ExceptT CodegenError (State CodegenState) ()
 setDepth depth = do
-  (code, count, f, _) <- get
-  put (code, count, f, depth)
+  (code, count, f, _, st) <- get
+  put (code, count, f, depth, st)
 
 assert_depth_is_0 :: ExceptT CodegenError (State CodegenState) ()
 assert_depth_is_0 = do
@@ -24,12 +41,12 @@ assert_depth_is_0 = do
 
 setCurFunc :: Obj -> ExceptT CodegenError (State CodegenState) ()
 setCurFunc func = do
-  (code, count, _, depth) <- get
-  put (code, count, Just func, depth)
+  (code, count, _, depth, s) <- get
+  put (code, count, Just func, depth, s)
 
 getCurFunc :: ExceptT CodegenError (State CodegenState) Obj
 getCurFunc  = do
-  (_, _, myabe_f, _) <- get
+  (_, _, myabe_f, _, _) <- get
   case myabe_f of
     Nothing -> throwE $ ErrorText "current func is NULL"
     Just f -> return f
@@ -37,33 +54,23 @@ getCurFunc  = do
 getCurFuncName :: ExceptT CodegenError (State CodegenState) String
 getCurFuncName  = fmap objName getCurFunc
 
-getCurLocals :: ExceptT CodegenError (State CodegenState) [Obj]
+getCurLocals :: ExceptT CodegenError (State CodegenState) [Int]
 getCurLocals  = fmap objLocals getCurFunc
-
-getVariable :: Obj -> ExceptT CodegenError (State CodegenState) Obj
-getVariable var = do
-  locals <- getCurLocals
-  case find f locals of
-    Nothing ->  throwE $ ErrorText ("variable " ++ objName var ++ " is not declare")
-    Just res -> return res
-    where
-      f o = objName var == objName o
-
 
 genLine :: String -> ExceptT CodegenError (State CodegenState) ()
 genLine prog = do
-  (code, count, f, depth) <- get
-  put (code ++ [prog], count, f, depth)
+  (code, count, f, depth, s) <- get
+  put (code ++ [prog], count, f, depth, s)
 
 genLines :: [String] -> ExceptT CodegenError (State CodegenState) ()
 genLines prog = do
-  (code, count, f, depth) <- get
-  put (code ++ prog, count, f, depth)
+  (code, count, f, depth, s) <- get
+  put (code ++ prog, count, f, depth, s)
 
 getCount :: ExceptT CodegenError (State CodegenState) Int
 getCount = do
-  (code, count, f, depth) <- get
-  put (code, count + 1, f, depth)
+  (code, count, f, depth, s) <- get
+  put (code, count + 1, f, depth, s)
   return $ count
 
 convertEx :: (Int -> (Int, [String])) -> ExceptT CodegenError (State CodegenState) ()
@@ -104,8 +111,8 @@ store = do
 
 gen_addr :: Node -> ExceptT CodegenError (State CodegenState) ()
 gen_addr (Node kind _ tok) = case kind of
-  VAR var -> do
-    obj <- getVariable var
+  VAR key -> do
+    obj <- getVar key
     let offset = objOffset obj
     genLine $ "  lea " ++ show offset ++ "(%rbp), %rax\n"
 
@@ -258,19 +265,21 @@ gen_bin_op ND_LE = [" cmp %rdi, %rax\n",
 align_to :: Int -> Int -> Int
 align_to align n = ((n + align - 1) `div` align) * align
 
-assign_lvar_offset :: Obj -> Obj
-assign_lvar_offset obj = obj {objLocals = vars',  objOffset = offset''}
-  where
-    vars     = objLocals obj
-    sizes    = map (typeSize . objType) vars
-    offsets  = scanl1 (+) sizes
-    vars'    = map (uncurry change_offset) $ zip vars offsets
-    offset'' = if length vars' == 0
+assign_lvar_offset :: Obj -> ExceptT CodegenError (State CodegenState) Int
+assign_lvar_offset obj = do
+    let vars = objLocals obj
+    vars' <-  mapM getVar vars
+    let sizes    = map (typeSize . objType) vars'
+    let offsets  = scanl1 (+) sizes
+    forM_ (zip vars' offsets) change_offset
+    let offset'' = if length vars == 0
                   then 0
                   else ((align_to 16) . last) offsets
+    return offset''
 
 
-change_offset obj offset = obj {objOffset= (0 - offset)}
+change_offset (o,offset) = updateVar (change_offset' offset) (objKey o)
+change_offset' offset obj = obj {objOffset= (0 - offset)}
 
     --f ((Obj name t _):vs) offset = ((Obj name t (0 - offset)) : vs', offset'') where
 gen_block :: [Node] -> ExceptT CodegenError (State CodegenState) ()
@@ -279,14 +288,14 @@ gen_block nodes = forM_ nodes gen_stmt
 codegen_ :: [Obj] -> ExceptT CodegenError (State CodegenState) ()
 codegen_ = iter where
   iter [] = return ()
-  iter (f:fs) = do
-    let f' = assign_lvar_offset f
-    let body = objBody f'
-    let stack_size = objStackSize f'
-    let name = objName f'
-    let args = objArgs f'
+  iter (o:obj) = do
+    f <- (getVar . objKey) o
+    stack_size <- assign_lvar_offset f
+    let body = objBody f
+    let name = objName f
+    let (FUNC _ args _) = (typeKind . objType) f
 
-    setCurFunc f'
+    setCurFunc f
 
     genLine $ "  .globl " ++ name ++ "\n"
     genLine $ name ++ ":\n"
@@ -305,15 +314,15 @@ codegen_ = iter where
     genLine "  pop %rbp\n"
     genLine "  ret\n"
 
-    iter fs
+    iter obj
   add_func_arg (arg, reg) = do
-    obj <- getVariable arg
+    obj <- getVar arg
     let offset = objOffset obj
     genLine $ "  mov " ++ reg ++ ", "++ show offset ++ "(%rbp) \n"
 
-codegen :: [Obj] -> Either Error [String]
-codegen f = do
-  let (r,(code, _, _, _)) = runState (runExceptT (codegen_ f)) ([], 1, Nothing, 0)
+codegen :: [Obj] -> IntMap Obj-> Either Error [String]
+codegen f storage= do
+  let (r,(code, _, _, _, _)) = runState (runExceptT (codegen_ f)) ([], 1, Nothing, 0, storage)
   case r of
     Left e -> Left e
     Right _ -> return code

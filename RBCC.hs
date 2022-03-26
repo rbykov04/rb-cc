@@ -1,4 +1,9 @@
 module RBCC where
+import Control.Monad.Trans.Except
+import Control.Monad.State
+import Data.IntMap.Lazy (IntMap, (!))
+import qualified Data.IntMap.Lazy as IntMap
+
 --
 -- Tokenizer
 --
@@ -47,8 +52,9 @@ data TypeKind
   | PTR Type
   -- arr  base len
   | ARRAY Type Int
---       typy args
-  | FUNC Type [(Type, String)]
+--       typy args locals
+  | FUNC Type [Int] [Int]
+  --  FUNC Type [(Type, String)]
   deriving (Show, Eq)
 
 -- Pointer
@@ -72,7 +78,7 @@ data Type = Type
 
 data Node_ =
   NUM Int
-  | VAR Obj
+  | VAR Int
   | Assign Node Node  -- =
   | BIN_OP BinOp Node Node
   | UNARY UnOp Node
@@ -101,15 +107,33 @@ data Node = Node
 
 data Obj = Obj
   {
+    objKey        :: Int,
     objName       :: String, -- variable name
     objType       :: Type  , -- type
     objOffset     :: Int   , -- offset from RBP
     objIsLocal    :: Bool  , -- local or global/function
-    objIsFunction :: Bool  , -- global or function
     objBody       :: [Node],
-    objLocals     :: [Obj] ,
-    objStackSize  :: Int,
-    objArgs       :: [Obj]
+    objLocals     :: [Int] ,
+    objStackSize  :: Int
   }
   deriving (Show, Eq)
 
+
+type Vars = ([Obj], [Obj])
+type ParserState = ([Token], Vars, IntMap Obj)
+
+fst'  (a, _, _) = a
+snd'  (_, a, _) = a
+thrd' (_, _, a) = a
+
+
+getVars :: ExceptT Error (State ParserState) (IntMap Obj)
+getVars = do
+  r <- get
+  return $ thrd' r
+
+
+get_var :: Int -> ExceptT Error (State ParserState) Obj
+get_var key = do
+  vars <- getVars
+  return $ vars ! key

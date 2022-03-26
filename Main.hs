@@ -6,6 +6,7 @@ import Tokenize
 import Parse
 import Text.Printf
 
+
 printProgram :: [String] -> IO ()
 printProgram [] = return ()
 printProgram (s:ss) = do
@@ -29,8 +30,8 @@ main = do
         let parse_res = (parse . convert_keywords) toks
         case parse_res of
           Left err -> printError p err
-          Right (func, _) ->
-            case codegen func of
+          Right (globals, _, storage) ->
+            case codegen globals storage of
             Right prog -> do
               printProgram prog
               return 0

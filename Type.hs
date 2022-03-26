@@ -4,13 +4,12 @@ import Control.Monad.State
 import System.Environment
 import System.IO
 import RBCC
-import Codegen
 import Tokenize
 import Data.List
 
 size_of (Type _ size) = size
 array_of base len = Type (ARRAY base len) (size_of base * len)
-func_type ret_type args = Type (FUNC ret_type args) 8
+func_type ret_type args = Type (FUNC ret_type args []) 8
 pointer_to base = Type (PTR base) 8
 make_int = Type INT 8
 
@@ -56,7 +55,8 @@ add_type nodeKind tok = case nodeKind of
     let ty = nodeType lhs
     return $ Node nodeKind ty tok
 
-  VAR obj -> do
+  VAR key -> do
+    obj <- get_var key
     return $ Node nodeKind (objType obj) tok
 
   _ -> return $ Node nodeKind make_int tok
