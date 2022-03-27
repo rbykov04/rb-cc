@@ -11,6 +11,7 @@ import qualified Data.IntMap.Lazy as IntMap
 data TokenKind =
   EOF
   | Ident String   -- Identifiers
+  | Str String     -- String literals
   | Punct String   -- Punctuators
   | Num Int        -- Numeric Literals
   | Keyword String -- Keywords

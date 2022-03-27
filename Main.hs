@@ -22,7 +22,7 @@ main = do
     return (-1)
   else do
     let p = head args
-    let res = sequence $ tokenize 0 p
+    let res = tokenize_ p
     case res of
       Left (loc, text) -> do
         error_at p loc text
