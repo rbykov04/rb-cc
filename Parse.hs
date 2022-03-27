@@ -349,11 +349,13 @@ expr_stmt = do
     skip (Punct ";")
     add_type (EXPS_STMT node) tok
 
--- declspec = "int"
+-- declspec = "int" | "char"
 declspec   :: ExceptT Error (State ParserState) Type
 declspec = do
-  skip (Keyword "int")
-  return make_int
+  kind <- seeHeadTokenKind
+  case kind of
+    Keyword "char" -> skip (Keyword "char") >> return make_char
+    _              -> skip (Keyword "int")  >> return make_int
 
 create_param_lvars :: [(Type,String)] -> ExceptT Error (State ParserState) [Int]
 create_param_lvars = mapM $ (uncurry . flip) new_lvar
@@ -473,6 +475,12 @@ declaration = do
         decl_expr basety nodes_
       else return nodes_
 
+is_type = do
+  kind <- seeHeadTokenKind
+  case kind of
+    (Keyword "int")  -> return True
+    (Keyword "char") -> return True
+    _                -> return False
 compound_stmt  = do
   tok <- seeHeadToken
   nodes <- iter []
@@ -486,8 +494,8 @@ compound_stmt  = do
         _ <- popHeadToken
         return nodes
       else do
-        ts <- getTokens
-        if head_equal ts (Keyword "int")
+        isType <- is_type
+        if isType
         then do
           node <- declaration
           iter (nodes ++ [node])

@@ -78,7 +78,7 @@ printError input (ErrorText text) = do
   hPutStrLn stderr $ text
   return 1
 
-keywords = ["return", "if", "else", "for", "while", "int", "sizeof"]
+keywords = ["return", "if", "else", "for", "while", "char", "int", "sizeof"]
 
 convert_keywords :: [Token] -> [Token]
 convert_keywords = map toKeyword

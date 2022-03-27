@@ -49,6 +49,7 @@ data UnOp =
 --
 data TypeKind
   = INT
+  | CHAR
   | PTR Type
   -- arr  base len
   | ARRAY Type Int

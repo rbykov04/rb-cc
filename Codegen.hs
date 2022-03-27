@@ -101,10 +101,14 @@ load ty = case typeKind ty of
     _ -> do
       genLine "  mov (%rax), %rax\n"
 
-store :: ExceptT CodegenError (State CodegenState) ()
-store = do
+-- Store %rax to an address that the stack top is pointing to.
+store :: Type -> ExceptT CodegenError (State CodegenState) ()
+store ty = do
     pop "%rdi"
-    genLine "  mov %rax, (%rdi)\n"
+    if typeSize ty == 1 then
+      genLine "  mov %al, (%rdi)\n"
+    else
+      genLine "  mov %rax, (%rdi)\n"
 
 
 gen_addr :: Node -> ExceptT CodegenError (State CodegenState) ()
@@ -123,8 +127,11 @@ gen_addr (Node kind _ tok) = case kind of
 
   _ -> throwE $ ErrorToken tok "Codegen: not a value"
 
-argreg :: [String]
-argreg = ["%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"]
+argreg8 :: [String]
+argreg8 = ["%dil", "%sil", "%dl", "%cl", "%r8b", "%r9b"]
+
+argreg64 :: [String]
+argreg64 = ["%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"]
 
 gen_expr ::Node ->ExceptT CodegenError (State CodegenState) ()
 gen_expr node@(Node kind ty tok) = case kind of
@@ -136,11 +143,11 @@ gen_expr node@(Node kind ty tok) = case kind of
     gen_addr lhs
     push
     gen_expr rhs
-    store
+    store ty
 
   FUNCALL name arguments -> do
     let nargs = length arguments
-    let fregs = reverse $ take nargs argreg
+    let fregs = reverse $ take nargs argreg64
 
     forM_ arguments gen_arg
     forM_ fregs pop
@@ -324,7 +331,7 @@ emit_text o = do
         genLine $ "  sub $" ++ show stack_size ++", %rsp\n"
 
         --Save passed-by-register arguments to the stack
-        forM_ (zip args argreg) add_func_arg
+        forM_ (zip3 args argreg8 argreg64) add_func_arg
         -- Traverse the AST to emit assembly
         gen_block body
 
@@ -334,10 +341,13 @@ emit_text o = do
         genLine "  ret\n"
       _  -> pure ()
   where
-  add_func_arg (arg, reg) = do
+  add_func_arg (arg, reg8, reg64) = do
     obj <- getVar arg
     let offset = objOffset obj
-    genLine $ "  mov " ++ reg ++ ", "++ show offset ++ "(%rbp) \n"
+    if (typeSize .objType) obj  == 1 then
+      genLine $ "  mov " ++ reg8 ++ ", "++ show offset ++ "(%rbp) \n"
+    else
+      genLine $ "  mov " ++ reg64 ++ ", "++ show offset ++ "(%rbp) \n"
 
 
 codegen_ :: [Int] -> ExceptT CodegenError (State CodegenState) ()
