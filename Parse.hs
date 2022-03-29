@@ -29,6 +29,7 @@ import Control.Monad.Trans.Except
 import Control.Monad.State
 import Data.IntMap.Lazy (IntMap, (!))
 import qualified Data.IntMap.Lazy as IntMap
+
 head_equal :: [Token] -> TokenKind -> Bool
 head_equal ((Token (Punct a) _ _) : _) (Punct b) = a == b
 head_equal ((Token (Ident a) _ _) : _) (Ident b) = a == b
@@ -79,7 +80,12 @@ add           :: ExceptT Error (State ParserState) Node
 mul           :: ExceptT Error (State ParserState) Node
 postfix       :: ExceptT Error (State ParserState) Node
 
-
+newUniqName :: ExceptT Error (State ParserState) String
+newUniqName = do
+  r <- get
+  let id_ = forth' r
+  put (fst' r, snd' r, thrd' r, forth' r + 1)
+  return $ ".L.." ++ show id_
 
 getTokens :: ExceptT Error (State ParserState) [Token]
 getTokens = do
@@ -89,7 +95,7 @@ getTokens = do
 putTokens :: [Token] -> ExceptT Error (State ParserState) ()
 putTokens toks = do
   r <- get
-  put (toks, snd' r, thrd' r)
+  put (toks, snd' r, thrd' r, forth' r)
 
 
 getLocals :: ExceptT Error (State ParserState) [Obj]
@@ -100,7 +106,7 @@ getLocals = do
 putLocals :: [Obj] -> ExceptT Error (State ParserState) ()
 putLocals vars = do
   r <- get
-  put (fst' r, (vars, (snd. snd') r), thrd' r)
+  put (fst' r, (vars, (snd. snd') r), thrd' r, forth' r)
 
 getGlobals :: ExceptT Error (State ParserState) [Obj]
 getGlobals = do
@@ -110,12 +116,12 @@ getGlobals = do
 putGlobals :: [Obj] -> ExceptT Error (State ParserState) ()
 putGlobals vars = do
   r <- get
-  put (fst' r, (((fst. snd') r), vars), thrd' r)
+  put (fst' r, (((fst. snd') r), vars), thrd' r, forth' r)
 
 putVars :: IntMap Obj -> ExceptT Error (State ParserState) ()
 putVars vars = do
   r <- get
-  put (fst' r, snd' r, vars)
+  put (fst' r, snd' r, vars, forth' r)
 
 
 
@@ -238,7 +244,7 @@ new_var :: String -> Type -> Bool -> ExceptT Error (State ParserState) Obj
 new_var name t isLocal = do
   vars <- getVars
   let key = IntMap.size vars + 1
-  let v = Obj key name t 0 isLocal [] []
+  let v = Obj key name t 0 isLocal [] [] Nothing
 
   putVars (IntMap.insert key v vars)
   return v
@@ -262,6 +268,23 @@ new_gvar name t = do
   vars <- getGlobals
   putGlobals (v:vars)
   return $ objKey v
+
+new_anon_gvar :: Type -> ExceptT Error (State ParserState) Int
+new_anon_gvar t = do
+  name <- newUniqName
+  new_gvar name t
+
+new_string_literal text ty= do
+  key <- new_anon_gvar ty
+  update_var (updateFunc text) key
+  return key
+  where
+    updateFunc data_ obj = obj {objInitData = (Just data_)};
+
+
+
+
+
 
 -- funcall == ident "(" (assign ("," assign)*)? ")"
 funcall = do
@@ -292,7 +315,7 @@ funcall = do
         f_iter $ args ++ [arg]
 
 
--- primary = "(" expr ")" | ident args? | num | "sizeof" unary
+-- primary = "(" expr ")" | ident args? | str | num | "sizeof" unary
 -- args = "(" ")"
 primary = do
   (t@(Token kind _ _): ts) <- getTokens
@@ -301,6 +324,10 @@ primary = do
   case kind of
     Num v -> do
        add_type (NUM v) t
+    Str str -> do
+      let ty = array_of make_char (length str + 1)
+      o <- new_string_literal (str ++ "\0") ty
+      add_type (VAR o) t
     Ident str -> do
       next_kind <- seeHeadTokenKind
       case next_kind of
@@ -636,7 +663,7 @@ global_variable = do
 
 parse :: [Token] -> Either Error ([Obj], [Token], (IntMap Obj))
 parse toks = do
-  let (r, (tokens, (_, globals), storage)) = runState (runExceptT program) (toks, ([], []), IntMap.empty )
+  let (r, (tokens, (_, globals), storage, _)) = runState (runExceptT program) (toks, ([], []), IntMap.empty, 0 )
   case r of
     Left e -> Left e
     Right _ -> return (globals, tokens, storage)

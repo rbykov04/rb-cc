@@ -115,17 +115,19 @@ data Obj = Obj
     objOffset     :: Int   , -- offset from RBP
     objIsLocal    :: Bool  , -- local or global/function
     objBody       :: [Node],
-    objLocals     :: [Int]
+    objLocals     :: [Int],
+    objInitData   :: Maybe String -- global_variable
   }
   deriving (Show, Eq)
 
 
 type Vars = ([Obj], [Obj])
-type ParserState = ([Token], Vars, IntMap Obj)
+type ParserState = ([Token], Vars, IntMap Obj, Int)
 
-fst'  (a, _, _) = a
-snd'  (_, a, _) = a
-thrd' (_, _, a) = a
+fst'   (a, _, _, _) = a
+snd'   (_, a, _, _) = a
+thrd'  (_, _, a, _) = a
+forth' (_, _, _, a) = a
 
 
 getVars :: ExceptT Error (State ParserState) (IntMap Obj)

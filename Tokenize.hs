@@ -70,6 +70,16 @@ readWordM (c, num) = ((readWordM_ num) . toArray) c
 
 readPunct (c, num) = addToken $ Token (Punct [c]) 1 num
 
+readText_ :: String -> Int -> ExceptT  (Int, String) (State TokenState) ()
+readText_ str begin = do
+  (c, num) <- popCharNum
+  if c == '"' then do
+    addToken $ Token (Str str) (num - begin) begin
+  else do
+    readText_ (str ++ [c]) begin
+
+readText (_,begin) = readText_ "" begin
+
 readCompoundPunct :: (Char, Int) -> ExceptT  (Int, String) (State TokenState) ()
 readCompoundPunct (p, begin) = do
   (ps, _, _) <- get
@@ -112,6 +122,7 @@ tokenizeM = do
   else if c =='<'         then popCharNum >>= readCompoundPunct >> maybeEnd
   else if c =='!'         then popCharNum >>= readCompoundPunct >> maybeEnd
   else if c =='='         then popCharNum >>= readCompoundPunct >> maybeEnd
+  else if c =='"'         then popCharNum >>= readText        >> maybeEnd
   else if isPunctuation c then popCharNum >>= readPunct         >> maybeEnd
   else if isSymbol c      then popCharNum >>= readPunct         >> maybeEnd
   else if isDigit c       then popCharNum >>= readNumM          >> maybeEnd

@@ -1,6 +1,7 @@
 module Codegen where
 import RBCC
 import Data.List
+import Data.Char
 import Control.Monad.Trans.Except
 import Control.Monad.State
 
@@ -310,7 +311,16 @@ emit_data prog = do
         genLine $ "  .data\n"
         genLine $ "  .globl " ++ name ++ "\n"
         genLine $ name ++ ":\n"
-        genLine $ "  .zero " ++ show size ++ "\n"
+        case objInitData o of
+          Nothing   -> genLine $ "  .zero " ++ show size ++ "\n"
+          Just text -> print_bytes text
+    where
+      print_bytes [] = return ()
+      print_bytes (b: bytes) = do
+        genLine $ "  .byte " ++ ((show . ord) b) ++ "\n"
+        print_bytes bytes
+
+
 
 emit_text :: Int -> ExceptT CodegenError (State CodegenState) ()
 emit_text o = do
