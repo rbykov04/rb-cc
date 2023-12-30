@@ -82,6 +82,22 @@ readEscapedChar 'r' = '\r'
 readEscapedChar 'e' = '\27'
 readEscapedChar ch = ch
 
+readOctal :: String -> Int -> Int -> Int -> ExceptT  (Int, String) (State TokenState) ()
+readOctal str begin c max_order = do
+  (ch, _) <- seeCharNum
+  if isOctDigit ch && (max_order > 0) then do
+    _ <- popChar
+    readOctal str begin ((c * 8)  + (digitToInt ch)) (max_order - 1)
+  else do
+    readText_ (str ++ [chr c]) begin
+
+readEscapedChar_ :: String -> Int -> ExceptT  (Int, String) (State TokenState) ()
+readEscapedChar_ str begin = do
+  (ch, _) <- popCharNum
+  if isOctDigit ch then do
+    readOctal str begin (digitToInt ch) 2
+  else do
+    readText_ (str ++ [readEscapedChar ch]) begin
 
 readText_ :: String -> Int -> ExceptT  (Int, String) (State TokenState) ()
 readText_ str begin = do
@@ -91,8 +107,9 @@ readText_ str begin = do
   else if c == '\n' || c == '\0'  then do
     throwE (num, "unclosed string literal")
   else if c == '\\' then do
-    (ch, _) <- popCharNum
-    readText_ (str ++ [readEscapedChar ch]) begin
+    readEscapedChar_ str begin
+
+
   else do
    readText_ (str ++ [c]) begin
 
