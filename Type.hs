@@ -61,6 +61,21 @@ add_type nodeKind tok = case nodeKind of
     obj <- get_var key
     return $ Node nodeKind (objType obj) tok
 
+  STMT_EXPR body -> do
+    case body of
+      Node (BLOCK blocks) _ _ -> do
+        case (last' blocks) of
+          Node (EXPS_STMT x) _ tt -> do
+            let ty = nodeType x
+            --throwE (ErrorToken tok ("types: " ++ show x))
+            return $ Node nodeKind ty tt
+      _ -> throwE (ErrorToken tok "statement expression returning void is not supported")
+
   _ -> return $ Node nodeKind make_int tok
+
+last' :: [a] -> a
+last' ys = foldl1 (\_ -> \x -> x) ys
+
+
 
 change_type new (Node kind _ tok) = Node kind new tok

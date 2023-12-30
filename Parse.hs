@@ -322,10 +322,14 @@ funcall = do
         f_iter $ args ++ [arg]
 
 
--- primary = "(" expr ")" | ident args? | str | num | "sizeof" unary
+-- primary = "(" "{" stmt+ "}" ")"
+--         | "(" expr ")"
+--         | "sizeof" unary
+--         | ident func-args?
+--         | str
+--         | num
 -- args = "(" ")"
 primary = do
-
   toks <- getTokens
   case toks of
     (t@(Token kind _ _): ts) -> do
@@ -350,9 +354,19 @@ primary = do
                 Nothing -> throwE (ErrorToken t "undefined variable")
                 Just var -> add_type (VAR (objKey var)) t
         Punct "(" -> do
-          node <- expr
-          skip (Punct ")")
-          return node
+          isGnuStatementExpression <- head_equalM (Punct "{")
+          if isGnuStatementExpression
+          then do
+          -- This is a GNU statement expresssion.
+            skip (Punct "{")
+            body <- compound_stmt
+            skip (Punct ")")
+            node <- add_type (STMT_EXPR body) t
+            return node
+          else do
+            node <- expr
+            skip (Punct ")")
+            return node
         Keyword "sizeof" -> do
           node <- unary
           add_type (NUM ((size_of . nodeType) node)) t

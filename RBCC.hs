@@ -85,6 +85,7 @@ data Node_ =
   | BIN_OP BinOp Node Node
   | UNARY UnOp Node
   | EXPS_STMT Node
+  | STMT_EXPR Node
 --          name    args
   | FUNCALL String [Node]
   | RETURN Node            -- "return"

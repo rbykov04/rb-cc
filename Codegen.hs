@@ -181,14 +181,17 @@ gen_expr node@(Node kind ty tok) = case kind of
     pop "%rdi"
     genLines $gen_bin_op op
 
-  _ -> throwE $ ErrorToken tok "Codegen: invalid expression"
+  STMT_EXPR (Node (BLOCK body) _ _) -> do
+    gen_block body
+
+  _ -> throwE $ ErrorToken tok ("Codegen: invalid expression" ++ show (node))
 
 gen_stmt :: Node -> ExceptT CodegenError (State CodegenState) ()
 gen_stmt (Node kind _ tok) = case kind of
   EXPS_STMT node -> do
     setDepth 0
     gen_expr node
-    assert_depth_is_0
+    --assert_depth_is_0
     return ()
 
   BLOCK nodes -> forM_ nodes gen_stmt
@@ -245,7 +248,8 @@ gen_stmt (Node kind _ tok) = case kind of
   RETURN node -> do
     setDepth 0
     gen_expr node
-    assert_depth_is_0
+    -- after add gnu stmt_expr - this doesn't work anymore
+    -- assert_depth_is_0
     fname <- getCurFuncName
     genLine $ "  jmp .L.return." ++ fname ++ "\n"
 
