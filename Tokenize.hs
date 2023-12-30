@@ -91,10 +91,31 @@ readOctal str begin c max_order = do
   else do
     readText_ (str ++ [chr c]) begin
 
+
+readHex :: String -> Int -> Int -> ExceptT  (Int, String) (State TokenState) ()
+readHex str begin hex = do
+  (ch, _) <- seeCharNum
+  if isHexDigit ch then do
+    _ <- popChar
+    readHex str begin ((hex * 16)  + (digitToInt ch))
+  else do
+    readText_ (str ++ [chr hex]) begin
+
+
+
+
+
 readEscapedChar_ :: String -> Int -> ExceptT  (Int, String) (State TokenState) ()
 readEscapedChar_ str begin = do
   (ch, _) <- popCharNum
-  if isOctDigit ch then do
+  if ch == 'x' then do
+    (hex, num) <- popCharNum
+    if not (isHexDigit hex) then do
+      throwE (num, "invalid hex escape sequence")
+    else do
+      readHex str begin (digitToInt hex)
+
+  else if isOctDigit ch then do
     readOctal str begin (digitToInt ch) 2
   else do
     readText_ (str ++ [readEscapedChar ch]) begin
