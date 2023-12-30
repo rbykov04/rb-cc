@@ -49,14 +49,21 @@ head_equalM token = do
 
 popHeadToken :: ExceptT Error (State ParserState) Token
 popHeadToken = do
-  (h:ts) <- getTokens
-  putTokens ts
-  return h
+  toks <- getTokens
+  case toks of
+    (h:ts) -> do
+      putTokens ts
+      return h
+    [] -> error "not achivable"
 
 seeHeadToken :: ExceptT Error (State ParserState) Token
 seeHeadToken = do
-  (h:_) <- getTokens
-  return h
+  toks <- getTokens
+  case toks of
+    (h:_) -> do
+      return h
+    [] -> error "not achivable"
+
 
 seeHeadTokenKind :: ExceptT Error (State ParserState) TokenKind
 seeHeadTokenKind = do
@@ -318,50 +325,63 @@ funcall = do
 -- primary = "(" expr ")" | ident args? | str | num | "sizeof" unary
 -- args = "(" ")"
 primary = do
-  (t@(Token kind _ _): ts) <- getTokens
-  putTokens ts
 
-  case kind of
-    Num v -> do
-       add_type (NUM v) t
-    Str str -> do
-      let ty = array_of make_char (length str + 1)
-      o <- new_string_literal (str ++ "\0") ty
-      add_type (VAR o) t
-    Ident str -> do
-      next_kind <- seeHeadTokenKind
-      case next_kind of
+  toks <- getTokens
+  case toks of
+    (t@(Token kind _ _): ts) -> do
+      putTokens ts
+
+      case kind of
+        Num v -> do
+          add_type (NUM v) t
+        Str str -> do
+          let ty = array_of make_char (length str + 1)
+          o <- new_string_literal (str ++ "\0") ty
+          add_type (VAR o) t
+        Ident str -> do
+          next_kind <- seeHeadTokenKind
+          case next_kind of
+            Punct "(" -> do
+              putTokens (t:ts)
+              funcall
+            _ -> do
+              fv <- find_var str
+              case fv of
+                Nothing -> throwE (ErrorToken t "undefined variable")
+                Just var -> add_type (VAR (objKey var)) t
         Punct "(" -> do
-          putTokens (t:ts)
-          funcall
-        _ -> do
-          fv <- find_var str
-          case fv of
-            Nothing -> throwE (ErrorToken t "undefined variable")
-            Just var -> add_type (VAR (objKey var)) t
-    Punct "(" -> do
-      node <- expr
-      skip (Punct ")")
-      return node
-    Keyword "sizeof" -> do
-      node <- unary
-      add_type (NUM ((size_of . nodeType) node)) t
-    _ -> throwE (ErrorToken t "expected an expression")
+          node <- expr
+          skip (Punct ")")
+          return node
+        Keyword "sizeof" -> do
+          node <- unary
+          add_type (NUM ((size_of . nodeType) node)) t
+        _ -> throwE (ErrorToken t "expected an expression")
+    [] -> error "not achivable"
 
 consume :: TokenKind -> ExceptT Error (State ParserState) Bool
 consume tok = do
-  (t:ts) <- getTokens
-  if head_equal (t:ts) tok
-  then do
-    putTokens ts
-    return True
-  else return False
+  toks <- getTokens
+  case toks of
+    (t:ts) -> if head_equal (t:ts) tok
+      then do
+        putTokens ts
+        return True
+      else return False
+    [] -> error "not achivable"
+
+
 
 skip :: TokenKind -> ExceptT Error (State ParserState) ()
 skip tok = do
-  (t:ts) <- getTokens
-  unless (head_equal (t:ts) tok) $ throwE (ErrorToken t ("expected "  ++ show tok))
-  putTokens ts
+  toks <- getTokens
+  case toks of
+    (t:ts) -> do
+      unless (head_equal (t:ts) tok) $ throwE (ErrorToken t ("expected "  ++ show tok))
+      putTokens ts
+    [] -> error "not achivable"
+
+
 
 -- expr-stmt = expr? ";"
 expr_stmt = do
