@@ -91,7 +91,7 @@ newUniqName :: ExceptT Error (State ParserState) String
 newUniqName = do
   r <- get
   let id_ = forth' r
-  put (fst' r, snd' r, thrd' r, forth' r + 1)
+  put (fst' r, snd' r, thrd' r, forth' r + 1, fifth' r)
   return $ ".L.." ++ show id_
 
 getTokens :: ExceptT Error (State ParserState) [Token]
@@ -102,7 +102,7 @@ getTokens = do
 putTokens :: [Token] -> ExceptT Error (State ParserState) ()
 putTokens toks = do
   r <- get
-  put (toks, snd' r, thrd' r, forth' r)
+  put (toks, snd' r, thrd' r, forth' r, fifth' r)
 
 
 getLocals :: ExceptT Error (State ParserState) [Obj]
@@ -113,7 +113,7 @@ getLocals = do
 putLocals :: [Obj] -> ExceptT Error (State ParserState) ()
 putLocals vars = do
   r <- get
-  put (fst' r, (vars, (snd. snd') r), thrd' r, forth' r)
+  put (fst' r, (vars, (snd. snd') r), thrd' r, forth' r, fifth' r)
 
 getGlobals :: ExceptT Error (State ParserState) [Obj]
 getGlobals = do
@@ -123,15 +123,36 @@ getGlobals = do
 putGlobals :: [Obj] -> ExceptT Error (State ParserState) ()
 putGlobals vars = do
   r <- get
-  put (fst' r, (((fst. snd') r), vars), thrd' r, forth' r)
+  put (fst' r, (((fst. snd') r), vars), thrd' r, forth' r, fifth' r)
 
 putVars :: IntMap Obj -> ExceptT Error (State ParserState) ()
 putVars vars = do
   r <- get
-  put (fst' r, snd' r, vars, forth' r)
+  put (fst' r, snd' r, vars, forth' r, fifth' r)
 
 
+enterScope :: ExceptT Error (State ParserState) ()
+enterScope = do
+  r <- get
+  put (fst' r, snd' r, thrd' r, forth' r, (Scope [] : fifth' r))
 
+leaveScope :: ExceptT Error (State ParserState) ()
+leaveScope = do
+  r <- get
+  let sc = fifth' r
+  case sc of
+    [] -> put r
+    (_: scopes) -> put (fst' r, snd' r, thrd' r, forth' r, scopes)
+
+
+pushScope :: String -> Obj -> ExceptT Error (State ParserState) ()
+pushScope name var = do
+  r <- get
+  case fifth' r of
+    [] ->  throwE (ErrorText "Please enter to scope before")
+    ((Scope vars) : scopes) -> do
+      let sc = VarScope name var
+      put (fst' r, snd' r, thrd' r, forth' r, (Scope (sc : vars): scopes))
 
 join_bin ::
    ExceptT Error (State ParserState) Node
@@ -239,13 +260,38 @@ unary = do
         node <- unary
         add_type (UNARY op node) tok
 
+find_var_in :: String -> [Scope] -> ExceptT Error (State ParserState) (Maybe Obj)
+find_var_in _ [] = do
+  return Nothing
+find_var_in name (Scope [] : sc) = find_var_in name sc
+find_var_in name ((Scope (v : vars)): sc_tail) = do
+  if scopeName v == name then do
+    return (Just ( scopeObj v))
+  else do
+    find_var_in name ((Scope (vars)): sc_tail)
+
+
+
 find_var :: String -> ExceptT Error (State ParserState) (Maybe Obj)
-find_var var = do
+find_var name = do
+  r <- get
+  case fifth' r of
+    [] -> do
+      return Nothing
+    sc -> do
+      find_var_in name sc
+--      throwE (ErrorText ("find var in " ++ show sc))
+
+
+find_var' :: String -> ExceptT Error (State ParserState) (Maybe Obj)
+find_var' var = do
   gvars <- getGlobals
   lvars <- getLocals
+
   return $ find f (gvars ++ lvars)
   where
     f obj = var == objName obj
+
 
 new_var :: String -> Type -> Bool -> ExceptT Error (State ParserState) Obj
 new_var name t isLocal = do
@@ -254,6 +300,7 @@ new_var name t isLocal = do
   let v = Obj key name t 0 isLocal [] [] Nothing
 
   putVars (IntMap.insert key v vars)
+  pushScope name v
   return v
 
 update_var :: (Obj -> Obj) ->Int -> ExceptT Error (State ParserState) ()
@@ -544,9 +591,15 @@ is_type = do
     _                -> return False
 compound_stmt  = do
   tok <- seeHeadToken
+  enterScope
   nodes <- iter []
+  leaveScope
 
-  add_type (BLOCK nodes) tok
+  r <- add_type (BLOCK nodes) tok
+
+
+  return r
+
   where
     iter nodes = do
       endBlock <- head_equalM (Punct "}")
@@ -637,12 +690,17 @@ function = do
   ty <- declspec
   (ftype, name) <- declarator ty
   skip (Punct "{")
+
+  enterScope
+
   s <- compound_stmt
   let nodes = [s]
 
   locals <- getLocals
   key <- new_gvar name ftype
   update_var (updateFunc (map objKey locals) nodes) key
+
+  leaveScope
   where
     updateFunc locals nodes obj = obj {objLocals = locals, objBody = nodes};
 
@@ -662,6 +720,7 @@ isFunction = do
 -- program = function-definition*
 program :: ExceptT Error (State ParserState) ()
 program = do
+  enterScope
   isEnd <- head_equalM EOF
   if isEnd
   then return ()
@@ -697,7 +756,7 @@ global_variable = do
 
 parse :: [Token] -> Either Error ([Obj], [Token], (IntMap Obj))
 parse toks = do
-  let (r, (tokens, (_, globals), storage, _)) = runState (runExceptT program) (toks, ([], []), IntMap.empty, 0 )
+  let (r, (tokens, (_, globals), storage, _, _)) = runState (runExceptT program) (toks, ([], []), IntMap.empty, 0 , [])
   case r of
     Left e -> Left e
     Right _ -> return (globals, tokens, storage)

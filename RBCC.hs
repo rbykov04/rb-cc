@@ -121,14 +121,27 @@ data Obj = Obj
   }
   deriving (Show, Eq)
 
+data VarScope = VarScope
+  {
+    scopeName :: String,
+    scopeObj  :: Obj
+  }
+  deriving (Show, Eq)
+
+data Scope = Scope
+  {
+    scopeVars :: [VarScope]
+  }
+  deriving (Show, Eq)
 
 type Vars = ([Obj], [Obj])
-type ParserState = ([Token], Vars, IntMap Obj, Int)
+type ParserState = ([Token], Vars, IntMap Obj, Int, [Scope])
 
-fst'   (a, _, _, _) = a
-snd'   (_, a, _, _) = a
-thrd'  (_, _, a, _) = a
-forth' (_, _, _, a) = a
+fst'   (a, _, _, _, _) = a
+snd'   (_, a, _, _, _) = a
+thrd'  (_, _, a, _, _) = a
+forth' (_, _, _, a, _) = a
+fifth' (_, _, _, _, a) = a
 
 
 getVars :: ExceptT Error (State ParserState) (IntMap Obj)
