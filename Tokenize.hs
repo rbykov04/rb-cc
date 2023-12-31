@@ -169,11 +169,43 @@ maybeEnd = do
   else
     tokenizeM
 
+
+ignoreTillNewLine ::  ExceptT  (Int, String) (State TokenState) ()
+ignoreTillNewLine = do
+  (c, num) <- popCharNum
+  if c == '\n' then maybeEnd
+  else ignoreTillNewLine
+
+ignoreTillEndCommentBlock ::  ExceptT  (Int, String) (State TokenState) ()
+ignoreTillEndCommentBlock = do
+  (s, num, _) <- get
+  if length s == 0 then
+    throwE (num, "unclosed block comment")
+  else do
+    (a, _) <- popCharNum
+    if a == '*' then do
+      (b, _) <- popCharNum
+      if b == '/' then maybeEnd
+      else ignoreTillEndCommentBlock
+    else ignoreTillEndCommentBlock
+
+
+
 tokenizeM ::ExceptT  (Int, String) (State TokenState) ()
 tokenizeM = do
   (c, num) <- seeCharNum
   if      isSeparator c || c == '\n' || c == '\0'   then popCharNum >> maybeEnd
   else if isIdent1 c      then popCharNum >>= readWordM         >> maybeEnd
+  else if c == '/'        then do
+   (a, _) <- popCharNum
+   (b, _) <- seeCharNum
+   if b == '/'  then do
+      ignoreTillNewLine
+   else if b == '*' then do
+      ignoreTillEndCommentBlock
+   else do
+      addToken $ Token (Punct [a]) 1 num
+      maybeEnd
   else if c =='>'         then popCharNum >>= readCompoundPunct >> maybeEnd
   else if c =='<'         then popCharNum >>= readCompoundPunct >> maybeEnd
   else if c =='!'         then popCharNum >>= readCompoundPunct >> maybeEnd
