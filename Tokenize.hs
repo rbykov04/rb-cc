@@ -172,7 +172,7 @@ maybeEnd = do
 tokenizeM ::ExceptT  (Int, String) (State TokenState) ()
 tokenizeM = do
   (c, num) <- seeCharNum
-  if      isSeparator c   then popCharNum >> maybeEnd
+  if      isSeparator c || c == '\n' || c == '\0'   then popCharNum >> maybeEnd
   else if isIdent1 c      then popCharNum >>= readWordM         >> maybeEnd
   else if c =='>'         then popCharNum >>= readCompoundPunct >> maybeEnd
   else if c =='<'         then popCharNum >>= readCompoundPunct >> maybeEnd
@@ -183,7 +183,7 @@ tokenizeM = do
   else if isSymbol c      then popCharNum >>= readPunct         >> maybeEnd
   else if isDigit c       then popCharNum >>= readNumM          >> maybeEnd
   else
-    throwE (num, "invalid token" ++ [c])
+    throwE (num, "invalid token: " ++ show c)
 
 tokenize_ str =
   let (r, (_, _, toks)) = runState (runExceptT tokenizeM) (str, 0, [])
