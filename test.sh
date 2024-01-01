@@ -14,8 +14,8 @@ EOF
 assert() {
   expected="$1"
   input="$2"
-
-  echo "$input" | ./rb-cc - > tmp.s || exit
+  rm -f tmp.s
+  echo "$input" | ./rb-cc -o tmp.s - || exit
   gcc -static -o tmp tmp.s tmp2.o
   gcc -static -g -o tmpd tmp.s tmp2.o
   ./tmp
