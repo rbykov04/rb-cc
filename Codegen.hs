@@ -61,6 +61,9 @@ genLine prog = do
   (code, count, f, depth, s) <- get
   put (code ++ [prog], count, f, depth, s)
 
+genLineLn :: String -> ExceptT CodegenError (State CodegenState) ()
+genLineLn prog = genLine (prog ++ "\n")
+
 genLines :: [String] -> ExceptT CodegenError (State CodegenState) ()
 genLines prog = do
   (code, count, f, depth, s) <- get
@@ -153,8 +156,8 @@ gen_expr node@(Node kind ty tok) = case kind of
     forM_ arguments gen_arg
     forM_ fregs pop
 
-    genLine $"  mov $0, %rax\n"
-    genLine $"  call "++ name ++ "\n"
+    genLineLn $"  mov $0, %rax"
+    genLineLn $"  call "++ name
 
     where
       gen_arg arg = do
@@ -162,12 +165,12 @@ gen_expr node@(Node kind ty tok) = case kind of
         push
 
   NUM a -> do
-    genLine $ "  mov $" ++ show a ++ ", %rax\n"
+    genLineLn $ "  mov $" ++ show a ++ ", %rax"
 
   UNARY op operand -> case op of
     Neg -> do
       gen_expr operand
-      genLine "  neg %rax\n"
+      genLineLn "  neg %rax"
     Addr -> do
       gen_addr operand
     Deref -> do
@@ -251,7 +254,7 @@ gen_stmt (Node kind _ tok) = case kind of
     -- after add gnu stmt_expr - this doesn't work anymore
     -- assert_depth_is_0
     fname <- getCurFuncName
-    genLine $ "  jmp .L.return." ++ fname ++ "\n"
+    genLineLn $ "  jmp .L.return." ++ fname
 
   _ -> throwE $ ErrorToken tok ("gen stmt: invalid statement ")
 
@@ -312,16 +315,16 @@ emit_data prog = do
     case (typeKind . objType) o of
       FUNC _ _ _ _ -> pure ()
       _  -> do
-        genLine $ "  .data\n"
-        genLine $ "  .globl " ++ name ++ "\n"
-        genLine $ name ++ ":\n"
+        genLineLn $ "  .data"
+        genLineLn $ "  .globl " ++ name
+        genLineLn $ name ++ ":"
         case objInitData o of
-          Nothing   -> genLine $ "  .zero " ++ show size ++ "\n"
+          Nothing   -> genLineLn $ "  .zero " ++ show size
           Just text -> print_bytes text
     where
       print_bytes [] = return ()
       print_bytes (b: bytes) = do
-        genLine $ "  .byte " ++ ((show . ord) b) ++ "\n"
+        genLineLn $ "  .byte " ++ ((show . ord) b)
         print_bytes bytes
 
 
@@ -336,32 +339,32 @@ emit_text o = do
 
         setCurFunc f
 
-        genLine $ "  .globl " ++ name ++ "\n"
-        genLine $ "  .text\n"
-        genLine $ name ++ ":\n"
+        genLineLn $ "  .globl " ++ name
+        genLineLn $ "  .text"
+        genLineLn $ name ++ ":"
         -- Prologue
-        genLine "  push %rbp\n"
-        genLine "  mov %rsp, %rbp\n"
-        genLine $ "  sub $" ++ show stack_size ++", %rsp\n"
+        genLineLn "  push %rbp"
+        genLineLn "  mov %rsp, %rbp"
+        genLineLn $ "  sub $" ++ show stack_size ++", %rsp"
 
         --Save passed-by-register arguments to the stack
         forM_ (zip3 args argreg8 argreg64) add_func_arg
         -- Traverse the AST to emit assembly
         gen_block body
 
-        genLine $".L.return." ++ name ++ ":\n"
-        genLine "  mov %rbp, %rsp\n"
-        genLine "  pop %rbp\n"
-        genLine "  ret\n"
+        genLineLn $ ".L.return." ++ name ++ ":"
+        genLineLn   "  mov %rbp, %rsp"
+        genLineLn   "  pop %rbp"
+        genLineLn   "  ret"
       _  -> pure ()
   where
   add_func_arg (arg, reg8, reg64) = do
     obj <- getVar arg
     let offset = objOffset obj
     if (typeSize .objType) obj  == 1 then
-      genLine $ "  mov " ++ reg8 ++ ", "++ show offset ++ "(%rbp) \n"
+      genLineLn $ "  mov " ++ reg8 ++ ", "++ show offset ++ "(%rbp)"
     else
-      genLine $ "  mov " ++ reg64 ++ ", "++ show offset ++ "(%rbp) \n"
+      genLineLn $ "  mov " ++ reg64 ++ ", "++ show offset ++ "(%rbp)"
 
 
 codegen_ :: [Int] -> ExceptT CodegenError (State CodegenState) ()
