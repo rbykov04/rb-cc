@@ -1,4 +1,6 @@
 module Main where
+
+
 import System.Environment
 import System.IO
 import Codegen
@@ -6,6 +8,8 @@ import Tokenize
 import Parse
 import Text.Printf
 import Data.List
+
+--import qualified MyLib (someFunc)
 
 
 printProgram :: [String] -> IO ()
@@ -45,6 +49,7 @@ main = do
   case parseArgs args of
     Left (err, text) -> do
       hPutStrLn stderr text
+      hPrint stderr err
       return err
     Right rbArgs -> do
       let path = input_path rbArgs
