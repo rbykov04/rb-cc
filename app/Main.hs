@@ -58,7 +58,7 @@ main = do
       let res = tokenize_ file
       case res of
         Left (loc, text) -> do
-          error_at file loc text
+          errorAt file loc text
         Right toks -> do
           let parse_res = (parse . convert_keywords) toks
           case parse_res of

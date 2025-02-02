@@ -3,7 +3,6 @@ import System.IO
 import Data.Char
 import Data.List
 import RBCC
-import Error
 import Control.Monad.Trans.Except
 import Control.Monad.State
 
@@ -210,11 +209,11 @@ tokenize_ str =
   in result
 
 
-get_number :: String -> Token -> IO (Maybe Int)
-get_number input (Token (Num v) _ _) = return (Just v)
-get_number input tok = do
-  error_tok input tok "expected a number"
-  return Nothing
+--get_number :: String -> Token -> IO (Maybe Int)
+--get_number input (Token (Num v) _ _) = return (Just v)
+--get_number input tok = do
+--  error_tok input tok "expected a number"
+--  return Nothing
 
 keywords = ["return", "if", "else", "for", "while", "char", "int", "sizeof"]
 
