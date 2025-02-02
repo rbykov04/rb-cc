@@ -58,7 +58,8 @@ library
     import:           warnings
 
     -- Modules exported by the library.
-    exposed-modules:  MyLib
+    exposed-modules:
+        MyLib
 
     -- Modules included in this library but not exported.
     -- other-modules:
@@ -67,13 +68,51 @@ library
     -- other-extensions:
 
     -- Other library packages from which modules are imported.
-    build-depends:    base ^>=4.17.2.0
+    build-depends:
+        base ^>=4.17.2.0,
+        transformers,
+        containers,
+        mtl,
+
 
     -- Directories containing source files.
     hs-source-dirs:   src
 
     -- Base language which the package is written in.
     default-language: GHC2021
+
+executable language-server
+    -- Import common warning flags.
+    import:           warnings
+
+    -- .hs or .lhs file containing the Main module.
+    main-is:          LanguageServer.hs
+
+    -- Modules included in this executable, other than Main.
+    other-modules:
+        Tokenize,
+        Codegen,
+        Parse,
+        RBCC
+
+
+    -- LANGUAGE extensions used by modules in this package.
+    -- other-extensions:
+
+    -- Other library packages from which modules are imported.
+    build-depends:
+        base ^>=4.17.2.0,
+        transformers,
+        containers,
+        mtl,
+        rb-cc
+
+    -- Directories containing source files.
+    hs-source-dirs:   app
+
+    -- Base language which the package is written in.
+    default-language: GHC2021
+
 
 executable rb-cc
     -- Import common warning flags.
@@ -83,7 +122,12 @@ executable rb-cc
     main-is:          Main.hs
 
     -- Modules included in this executable, other than Main.
-    -- other-modules:
+    other-modules:
+        Tokenize,
+        Codegen,
+        Parse,
+        RBCC
+
 
     -- LANGUAGE extensions used by modules in this package.
     -- other-extensions:
