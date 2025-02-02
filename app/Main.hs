@@ -6,6 +6,7 @@ import System.IO
 import Codegen
 import Tokenize
 import Parse
+import Error
 import Text.Printf
 import Data.List
 

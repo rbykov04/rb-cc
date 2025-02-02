@@ -7,6 +7,7 @@ import RBCC
 import Codegen
 import Tokenize
 import Parse
+import Error
 import Text.Printf
 import Data.List
 
@@ -46,6 +47,8 @@ main = do
       let t = printTokens toks
       printlnProgram t
       hPutStrLn stdout "============================="
+      let lines = getLines file 0 0
+
       let parse_res = (parse . convert_keywords) toks
       case parse_res of
         Left err -> printError file err
