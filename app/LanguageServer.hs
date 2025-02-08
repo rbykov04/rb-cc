@@ -7,6 +7,7 @@ import RBCC
 import Codegen
 import Tokenize
 import Parse
+import Parse2
 import Error
 import Text.Printf
 import Data.List
@@ -255,6 +256,15 @@ main = do
             hPutStrLn stdout $ show globals
             hPutStrLn stdout "============================="
             printlnProgram $ codeView file st
+            let prog_ = (parse2 . convert_keywords) toks
+
+            case prog_ of
+              Left err -> printError file err
+              Right prog -> do
+                hPutStrLn stdout $ show prog
+                return 0
+
+
             return 0
 
           Left e -> do

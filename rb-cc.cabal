@@ -93,6 +93,7 @@ executable language-server
         Tokenize,
         Codegen,
         Parse,
+        Parse2,
         Error,
         RBCC
 
