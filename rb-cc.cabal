@@ -95,6 +95,7 @@ executable language-server
         Parse,
         Parse2,
         Error,
+        Type,
         RBCC
 
 

@@ -29,7 +29,11 @@ data Token = Token
 -- Parser
 --
 
-data Error = ErrorCode Int | ErrorText String | ErrorToken Token String deriving Show
+data Error = ErrorCode Int
+           | ErrorText String
+           | ErrorLoc Int String
+           | ErrorToken Token String
+           deriving Show
 data BinOp =
   Add
   | Sub      -- -

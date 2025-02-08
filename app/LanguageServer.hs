@@ -1,17 +1,21 @@
 module Main where
-
-
-import System.Environment
-import System.IO
-import RBCC
-import Codegen
-import Tokenize
-import Parse
-import Parse2
-import Error
-import Text.Printf
-import Data.List
-import Data.List.Split
+import System.IO (hPutStrLn, stdout)
+import RBCC (
+            Node_ (..)
+            , Error (..)
+            , Token (..)
+            , TypeKind (..)
+            , Type (..)
+            , Obj (..)
+            , Node (..)
+            )
+-- import Codegen
+import Tokenize (tokenize_, getLines, convert_keywords)
+import Parse (parse)
+import Parse2 (parse2)
+import Error (printError)
+import Text.Printf (printf)
+import Data.List.Split (splitOn)
 
 import Data.IntMap (elems)
 --import qualified MyLib (someFunc)
@@ -25,9 +29,9 @@ printlnProgram (s:ss) = do
 
 
 nameNode_ :: Node_ -> String
-nameNode_ (BLOCK x)      = "BLOCK"
-nameNode_ (STMT_EXPR x)  = "STMT_EXPR"
-nameNode_ (EXPS_STMT x)  = "EXPR_STMT"
+nameNode_ (BLOCK _)      = "BLOCK"
+nameNode_ (STMT_EXPR _)  = "STMT_EXPR"
+nameNode_ (EXPS_STMT _)  = "EXPR_STMT"
 nameNode_ (IF _ _ _)  = "IF"
 nameNode_ (FUNCALL name _)  = "FUNCALL " ++ name
 nameNode_ (UNARY _ _)  = "UNARY"
@@ -36,8 +40,10 @@ nameNode_ (RETURN _)  = "RETURN"
 nameNode_ (Assign _ _)  = "ASSIGN"
 nameNode_ node =  show node
 
+nameNode :: Node -> String
 nameNode =   nameNode_ .  nodeNode
 
+inode :: Node -> (Int, String)
 inode n =  (((tokenLoc . nodeToken) n), nameNode n)
 
 --functor
@@ -45,13 +51,14 @@ visit :: (Node -> a) -> Node -> [a]
 visit f node@(Node (BLOCK x) _ _)         = [f node] ++ (concatMap . visit) f x
 visit f node@(Node (EXPS_STMT x) _ _)     = [f node] ++ visit f x
 visit f node@(Node (STMT_EXPR x) _ _)     = [f node] ++ visit f x
-visit f node@(Node (FUNCALL name x) a b)  = [f node] ++ (concatMap . visit) f x
+visit f node@(Node (FUNCALL _ x) _ _)  = [f node] ++ (concatMap . visit) f x
 visit f node = [f node]
 
-
+onlyCall :: Node_ -> Bool
 onlyCall (FUNCALL _ _)  = True
 onlyCall _  = False
 
+onlyBlock :: Node_ -> Bool
 onlyBlock (BLOCK _)  = True
 onlyBlock _  = False
 
@@ -65,9 +72,9 @@ ignore :: Node -> Maybe Node
 ignore (Node (BLOCK n) a b)  = Just (Node (BLOCK (queryFuncCall n)) a b)
 ignore (Node (FUNCALL name args) a b) = Just ((Node (FUNCALL name args)) a b)
 ignore (Node (EXPS_STMT n) a b) = case ignore n of
-  Just new -> Just ((Node (EXPS_STMT n)) a b)
+  Just _ -> Just ((Node (EXPS_STMT n)) a b)
   _ -> Just ((Node (EXPS_STMT n)) a b) -- it is imbosible
-ignore x = Nothing
+ignore _ = Nothing
 
 
 
@@ -81,10 +88,10 @@ printObj :: Obj -> [String]
 printObj obj =
     let
       t            = (typeKind . objType) obj
-      body         = objBody obj
+      --body         = objBody obj
       printBody    = (concatMap . visit) nameNode
-      printBody1   = (concatMap . visit) (\x -> show (nameNode x, 10))
-      filteredBody = queryFuncCall body
+      --printBody1   = (concatMap . visit) (\x -> show (nameNode x, 10))
+      --filteredBody = queryFuncCall body
 
     in case t of
       INT -> [objName obj ++ " " ++ show t]
@@ -92,8 +99,7 @@ printObj obj =
         [objName obj ++ " " ++ show t]
         ++ ["body->"]
         ++ (printBody (objBody obj))
-        ++ ["############", "filtered body->"]
-        ++ printBody1 filteredBody
+       -- ++ ["############", "filtered body->"] ++ printBody1 filteredBody
 
 printObj1 :: Obj -> [String]
 printObj1 obj =
@@ -110,10 +116,12 @@ objIsFunc obj = case (typeKind . objType) obj of
     FUNC _ _ _ _ -> True
     _            -> False
 
+numerize :: [a] -> [(Int, a)]
+numerize = zip[0..]
+
 console :: String -> [Obj] -> [String]
-console file ob =
+console _ ob =
     let
-      iLines = zip[0..] $ getLines file 0 0
       obj = (concatMap printObj) ob
       globalObj = filter (not . objIsLocal) ob
       globalVars = filter (not . objIsFunc) globalObj
@@ -128,8 +136,6 @@ console file ob =
     ]
 
 
-numerize = zip[0..]
-
 mergeColumns :: [String] -> [String] -> [String]
 mergeColumns [] a = a
 mergeColumns a [] = a
@@ -142,14 +148,14 @@ addLine ((line, (b, e)): xs) (loc, x) =
 
 collapse :: [(Int, Int, x)] -> [(Int, [x])]
 collapse [] = []
-collapse ((line, i, x) : xs) =
+collapse ((line, _, x) : xs) =
   let
     res = collapse (xs)
   in case res of
     [] -> [(line, [x])]
-    ((l, acc): xs) -> if line == l
-                      then (line, x : acc) : xs
-                      else (line, [x]) : (l, acc) : xs
+    ((l, acc): xs_) -> if line == l
+                      then (line, x : acc) : xs_
+                      else (line, [x]) : (l, acc) : xs_
 
 
 toksToMargin :: [Int] -> [(Int, [String])] -> [String]
@@ -157,10 +163,10 @@ toksToMargin [] _ = []
 toksToMargin (i: is) toks = [show (getToks i toks)] ++ toksToMargin is toks
   where
     getToks :: Int -> [(Int, [String])] -> [String]
-    getToks i [] = []
-    getToks i ((line, toks) :  xs) =
-      if i == line
-      then toks ++ getToks i xs
+    getToks _ [] = []
+    getToks i_ ((line, toks_) :  xs) =
+      if i_ == line
+      then toks_ ++ getToks i_ xs
       else getToks i xs
 
 maxrec :: (Ord a) => [a] -> a
@@ -175,11 +181,14 @@ normalizeCol :: [String] -> [String]
 normalizeCol arr =
   let
     sizes = map length arr
-    max = maxrec sizes
-    adds = map (\size -> replicate (max - size) ' ') sizes
+    max_ = maxrec sizes
+    adds = map (\size -> replicate (max_ - size) ' ') sizes
   in mergeColumnsArr [arr, adds]
 
+toPurple :: String
 toPurple = "\ESC[1;35m"
+
+toDefault :: String
 toDefault = "\ESC[0m"
 
 -- how cares about error Hanlding?
@@ -200,8 +209,8 @@ codeView :: String -> [Obj] -> [String]
 codeView file ob =
     let
       printSt2 = concatMap (((concatMap . visit)  inode) . objBody)
-      lines = getLines file 0 0
-      iLines = zip[0..] lines
+      lines_ = getLines file 0 0
+      iLines = zip[0..] lines_
       obj2_ = printSt2 ob
       obj3_ = map (addLine iLines) obj2_
       text = splitOn "\n" file
@@ -212,7 +221,7 @@ codeView file ob =
       nums          = (toksToMargin numbers (collapse obj3_))
       toks          = marginLeft
       coloredText   = splitOn "\n"  $ toHighlight file 95 100
-      x             = map show iLines
+       -- x             = map show iLines
       cols          =
         [
           normalizeCol toks,
@@ -222,50 +231,50 @@ codeView file ob =
         ]
     in mergeColumnsArr cols
 
+rowLine :: String
+rowLine = "============================="
+
+anotherParser :: String -> [Token] -> IO Int
+anotherParser file toks = do
+  let prog_ = (parse2 . convert_keywords) toks
+
+  case prog_ of
+    Left err -> printError file err
+    Right prog -> do
+      hPutStrLn stdout $ show prog
+      return 0
+
+showTokens :: String -> [Token] -> [String]
+showTokens file toks =
+  let
+    t = concatMap (\x -> [(show x)]) toks
+    f = splitOn "\n" file
+  in
+    rowLine : (f ++ t)
+
+errAdapter :: Either (Int, String) a -> Either Error a
+errAdapter (Left (loc, text)) = Left $ ErrorLoc loc text
+errAdapter (Right a) = Right a
+
+parserStage :: String -> Either Error [String]
+parserStage file = do
+  toks <- (errAdapter . tokenize_) file
+  (globals, _, storage) <- (parse . convert_keywords) toks
+ -- prog  <- codegen globals storage
+  let x = (map show globals)
+  let st = elems storage
+  return
+    $  [rowLine]
+    ++ x
+   -- ++ [rowLine] ++ showTokens file toks ++ [rowLine]
+    ++ (codeView file st)
+
 main :: IO (Int)
 main = do
-  hPutStrLn stdout "============================="
   file <- getContents
-  hPutStrLn stdout file
-  hPutStrLn stdout "============================="
-  let res = tokenize_ file
-  case res of
-    Left (loc, text) -> do
-      errorAt file loc text
-    Right toks -> do
-
-      let t = concatMap (\x -> [(show x)]) toks
-      printlnProgram t
-      hPutStrLn stdout "============================="
-
-      let parse_res = (parse . convert_keywords) toks
-      case parse_res of
-        Left err -> printError file err
-        Right (globals, _, storage) ->
-          case codegen globals storage of
-          Right prog -> do
-            hPutStrLn stdout "============================="
-            printlnProgram (map show globals)
-            hPutStrLn stdout "============================="
-            -- printlnProgram (map show storage)
-            hPutStrLn stdout "============================="
-            let st = elems storage
-            hPutStrLn stdout "============================="
-            printlnProgram $ console file globals
-            hPutStrLn stdout "============================="
-            hPutStrLn stdout $ show globals
-            hPutStrLn stdout "============================="
-            printlnProgram $ codeView file st
-            let prog_ = (parse2 . convert_keywords) toks
-
-            case prog_ of
-              Left err -> printError file err
-              Right prog -> do
-                hPutStrLn stdout $ show prog
-                return 0
-
-
-            return 0
-
-          Left e -> do
-            printError file e
+  case parserStage file of
+    Left e -> do
+      printError file e
+    Right text -> do
+      printlnProgram text
+      return 0

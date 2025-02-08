@@ -30,6 +30,9 @@ printError input (ErrorToken t text) = do
       -- FIXME: unreachiable - think about it
       ignoreUnknownLine (Just x) = x
       ignoreUnknownLine Nothing = (0,(0, 0))
+printError input (ErrorLoc loc text) = do
+        errorAt input loc text
+        return 1
 printError input (ErrorText text) = do
         let lines = getLines input 0 0
         hPutStrLn stderr text
