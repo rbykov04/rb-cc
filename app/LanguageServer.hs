@@ -1,5 +1,5 @@
 module Main where
-import System.IO (hPutStrLn, stdout)
+import System.IO ()
 import RBCC (
             Node_ (..)
             , Error (..)
@@ -9,10 +9,10 @@ import RBCC (
             , Obj (..)
             , Node (..)
             )
--- import Codegen
+import Codegen (codegen)
 import Tokenize (tokenize_, getLines, convert_keywords)
 import Parse (parse)
-import Parse2 (parse2)
+import Parse2
 import Error (printError)
 import Text.Printf (printf)
 import Data.List.Split (splitOn)
@@ -234,15 +234,45 @@ codeView file ob =
 rowLine :: String
 rowLine = "============================="
 
-anotherParser :: String -> [Token] -> IO Int
-anotherParser file toks = do
-  let prog_ = (parse2 . convert_keywords) toks
+getGlobalVars :: Program -> [VarDecl]
+getGlobalVars (Program []) = []
+getGlobalVars (Program decl) = concatMap visDecl decl
+  where
+    visDecl (VariableDecl _ _ v) = v
+    visDecl _  = []
 
-  case prog_ of
-    Left err -> printError file err
-    Right prog -> do
-      hPutStrLn stdout $ show prog
-      return 0
+getFuncs :: Program -> [Decl]
+getFuncs (Program []) = []
+getFuncs (Program decl) = concatMap visDecl decl
+  where
+    visDecl v@(Function _ _ _) = [v]
+    visDecl _  = []
+
+
+
+
+getVarLoc :: VarDecl -> (Token, String)
+getVarLoc (Variable (Context tok) name _) = (tok, name)
+
+getFuncLoc :: Decl -> (Token, String)
+getFuncLoc (Function (Context tok) _ name) = (tok, name)
+
+
+
+--anotherParser :: String -> [Token] -> Either Error [String]
+anotherParser _ toks = do
+  prog_ <- (parse2 . convert_keywords) toks
+  let vars = getGlobalVars prog_
+  let vars2 = map getVarLoc vars
+  return vars2
+
+  --anotherParser :: String -> [Token] -> Either Error [String]
+anotherParser2 _ toks = do
+  prog_ <- (parse2 . convert_keywords) toks
+  let funcs = getFuncs prog_
+  return $ map getFuncLoc funcs
+
+
 
 showTokens :: String -> [Token] -> [String]
 showTokens file toks =
@@ -256,18 +286,67 @@ errAdapter :: Either (Int, String) a -> Either Error a
 errAdapter (Left (loc, text)) = Left $ ErrorLoc loc text
 errAdapter (Right a) = Right a
 
+highlight :: String -> [(Int, Int)] -> String
+highlight text [] = text
+highlight text ((b, e) : ss) =
+    let
+      coloredText = highlight text ss
+    in
+      toHighlight coloredText b e
+
+codeView2 :: String -> [(Token, String)] -> [String]
+codeView2 file parts =
+    let
+      arr = map (\(t, _) -> (tokenLoc t , tokenLoc t + tokenLen t)) parts
+      --printSt2 = concatMap (((concatMap . visit)  inode) . objBody)
+      --lines_ = getLines file 0 0
+      --iLines = zip[0..] lines_
+      --obj2_ = printSt2 ob
+      --obj3_ = map (addLine iLines) obj2_
+      text = splitOn "\n" file
+
+      numbers       = take (length text ) [0..]
+      delim         = map (const " ") numbers
+      nums    = map show numbers
+      --nums          = (toksToMargin numbers (collapse obj3_))
+     -- toks          = marginLeft
+      coloredText   = splitOn "\n"  $ highlight file arr
+       -- x             = map show iLines
+      cols          =
+        [
+         normalizeCol nums,
+         -- delim, normalizeCol nums,
+         -- delim, normalizeCol x,
+          delim, coloredText
+        ]
+    in mergeColumnsArr cols
+
+
+
 parserStage :: String -> Either Error [String]
 parserStage file = do
-  toks <- (errAdapter . tokenize_) file
+  toks                  <- (errAdapter . tokenize_) file
   (globals, _, storage) <- (parse . convert_keywords) toks
- -- prog  <- codegen globals storage
-  let x = (map show globals)
+  vars                <- anotherParser file toks
+  funcs               <- anotherParser2 file toks
+
+  let res = map show vars
+  _  <- codegen globals storage
+  -- let x = (map show globals)
   let st = elems storage
   return
     $  [rowLine]
-    ++ x
+    -- ++ x
    -- ++ [rowLine] ++ showTokens file toks ++ [rowLine]
+    ++ [rowLine]
     ++ (codeView file st)
+    ++ [rowLine]
+    ++ res
+    ++ [rowLine]
+    ++ (codeView2 file vars)
+    ++ [rowLine]
+    ++ (codeView2 file funcs)
+    ++ [rowLine]
 
 main :: IO (Int)
 main = do
