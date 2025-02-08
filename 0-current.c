@@ -1,3 +1,4 @@
-int main() {
-    raeturn 20;
-}
+int g1;
+int g1;
+int g1;
+int g1;

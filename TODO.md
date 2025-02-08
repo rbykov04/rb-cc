@@ -4,6 +4,7 @@
 
 ### TODO print error like ghci
 
+
 ```
 app/Error.hs:19:1: warning: [-Wincomplete-patterns]
     Pattern match(es) are non-exhaustive
@@ -18,5 +19,6 @@ app/Error.hs:19:1: warning: [-Wincomplete-patterns]
 2. print a few line of text around error
 3. highlit error construction
 
+### TODO system to test errors
 
 

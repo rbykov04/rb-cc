@@ -9,7 +9,9 @@ function block_for_change {
 
 BUILD_SCRIPT=build.sh          # might want to change this too
 function build {
-  cat 0-current.c | cabal run language-server -- -o t.s - || true
+  (
+    cat 0-current.c | cabal run language-server -- -o t.s -
+  ) || true
 }
 build
 while block_for_change; do

@@ -230,5 +230,5 @@ convert_keywords = map toKeyword
 --                                    |     |
 getLines :: String -> Int -> Int -> [(Int, Int)]
 getLines []     begin cur   = []
-getLines ('\n':ss) begin cur   =  (begin, cur) : getLines ss cur cur
+getLines ('\n':ss) begin cur   =  (begin, cur) : getLines ss (cur+1) (cur+1)
 getLines (s:ss)    begin cur   = getLines ss begin (cur+1)

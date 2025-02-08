@@ -105,6 +105,7 @@ executable language-server
         base ^>=4.17.2.0,
         transformers,
         containers,
+        split,
         mtl,
         rb-cc
 
