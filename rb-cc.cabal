@@ -63,7 +63,6 @@ executable language-server
 
     -- Modules included in this executable, other than Main.
     other-modules:
-        Tokenize,
         Codegen,
         Parse,
         Parse2,
@@ -81,6 +80,7 @@ executable language-server
         transformers,
         containers,
         split,
+        tokenize,
         mtl
 
     -- Directories containing source files.
@@ -99,7 +99,6 @@ executable rb-cc
 
     -- Modules included in this executable, other than Main.
     other-modules:
-        Tokenize,
         Codegen,
         Parse,
         Error,
@@ -111,6 +110,7 @@ executable rb-cc
 
     -- Other library packages from which modules are imported.
     build-depends:
+        tokenize,
         base ^>=4.17.2.0,
         transformers,
         containers,
@@ -128,6 +128,19 @@ library cinterpreter
     hs-source-dirs: src
     build-depends: base
     default-language: Haskell2010
+
+library tokenize
+    exposed-modules: Tokenize
+    hs-source-dirs: src
+    build-depends: base
+    default-language: Haskell2010
+    build-depends:
+        base ^>=4.17.2.0,
+        transformers,
+        containers,
+        mtl
+
+
 
 test-suite rb-cc-test
     -- Import common warning flags.
