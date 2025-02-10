@@ -8,12 +8,20 @@ function block_for_change {
 }
 
 BUILD_SCRIPT=build.sh          # might want to change this too
-function build {
+function run {
+
   (
+    cabal test &&
     cat 0-current.c | cabal run language-server -- -o t.s -
   ) || true
 }
-build
+
+
+run
 while block_for_change; do
-  build
+  (
+    run
+
+  )
+
 done
