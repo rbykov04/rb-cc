@@ -1,5 +1,6 @@
 module Error where
 import RBCC
+import Tokenize
 import Data.List
 import Tokenize (getLines)
 import System.IO

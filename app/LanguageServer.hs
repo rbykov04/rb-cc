@@ -3,14 +3,17 @@ import System.IO ()
 import RBCC (
             Node_ (..)
             , Error (..)
-            , Token (..)
             , TypeKind (..)
             , Type (..)
             , Obj (..)
             , Node (..)
             )
 import Codegen (codegen)
-import Tokenize (tokenize_, getLines, convert_keywords)
+import Tokenize ( tokenize_
+                , getLines
+                , convert_keywords
+                , Token (..)
+                )
 import Parse (parse)
 import Parse2
 import Error (printError)

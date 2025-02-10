@@ -2,9 +2,31 @@ module Tokenize where
 import System.IO
 import Data.Char
 import Data.List
-import RBCC
 import Control.Monad.Trans.Except
 import Control.Monad.State
+
+--
+-- Tokenizer
+--
+
+data TokenKind =
+  EOF
+  | Ident String   -- Identifiers
+  | Str String     -- String literals
+  | Punct String   -- Punctuators
+  | Num Int        -- Numeric Literals
+  | Keyword String -- Keywords
+  deriving (Eq, Show)
+
+data Token = Token
+  {
+    tokenKind :: TokenKind,
+    tokenLen :: Int,
+    tokenLoc :: Int
+  }
+  deriving (Eq, Show)
+
+
 
 type TokenState = (String, Int, [Token])
 
