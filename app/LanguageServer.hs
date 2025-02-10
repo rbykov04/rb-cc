@@ -245,7 +245,7 @@ getFuncs :: Program -> [Decl]
 getFuncs (Program []) = []
 getFuncs (Program decl) = concatMap visDecl decl
   where
-    visDecl v@(Function _ _ _) = [v]
+    visDecl v@(Function _ _ _ _) = [v]
     visDecl _  = []
 
 
@@ -255,7 +255,7 @@ getVarLoc :: VarDecl -> (Token, String)
 getVarLoc (Variable (Context tok) name _) = (tok, name)
 
 getFuncLoc :: Decl -> (Token, String)
-getFuncLoc (Function (Context tok) _ name) = (tok, name)
+getFuncLoc (Function (Context tok) _ name _) = (tok, name)
 
 
 
@@ -329,6 +329,7 @@ parserStage file = do
   (globals, _, storage) <- (parse . convert_keywords) toks
   vars                <- anotherParser file toks
   funcs               <- anotherParser2 file toks
+  prog_ <- (parse2 . convert_keywords) toks
 
   let res = map show vars
   _  <- codegen globals storage
@@ -346,6 +347,7 @@ parserStage file = do
     ++ (codeView2 file vars)
     ++ [rowLine]
     ++ (codeView2 file funcs)
+    ++ [rowLine] ++ [show prog_]
     ++ [rowLine]
 
 main :: IO (Int)

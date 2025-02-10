@@ -1,4 +1,13 @@
 # Wayes to improve rb-cc
+## TODOS
+- move Parser2 to Libs
+- Remove Parser1 
+- Add interpriator for Parser2
+- Add semantic to calculate simple function from Parser2
+- Add semantic substitution to interpriator
+- Add semantic calculation to interpriator
+
+
 
 ## Error handling
 
