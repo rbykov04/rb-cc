@@ -53,33 +53,6 @@ extra-doc-files:    CHANGELOG.md
 common warnings
     ghc-options: -Wall
 
-library
-    -- Import common warning flags.
-    import:           warnings
-
-    -- Modules exported by the library.
-    exposed-modules:
-        MyLib
-
-    -- Modules included in this library but not exported.
-    -- other-modules:
-
-    -- LANGUAGE extensions used by modules in this package.
-    -- other-extensions:
-
-    -- Other library packages from which modules are imported.
-    build-depends:
-        base ^>=4.17.2.0,
-        transformers,
-        containers,
-        mtl,
-
-
-    -- Directories containing source files.
-    hs-source-dirs:   src
-
-    -- Base language which the package is written in.
-    default-language: GHC2021
 
 executable language-server
     -- Import common warning flags.
@@ -108,8 +81,7 @@ executable language-server
         transformers,
         containers,
         split,
-        mtl,
-        rb-cc
+        mtl
 
     -- Directories containing source files.
     hs-source-dirs:   app
@@ -142,14 +114,20 @@ executable rb-cc
         base ^>=4.17.2.0,
         transformers,
         containers,
-        mtl,
-        rb-cc
+        mtl
 
     -- Directories containing source files.
     hs-source-dirs:   app
 
     -- Base language which the package is written in.
     default-language: GHC2021
+
+
+library cinterpreter
+    exposed-modules: CInterpreter
+    hs-source-dirs: src
+    build-depends: base
+    default-language: Haskell2010
 
 test-suite rb-cc-test
     -- Import common warning flags.
@@ -159,7 +137,7 @@ test-suite rb-cc-test
     default-language: GHC2021
 
     -- Modules included in this executable, other than Main.
-    -- other-modules:
+    --other-modules:
 
     -- LANGUAGE extensions used by modules in this package.
     -- other-extensions:
@@ -170,11 +148,11 @@ test-suite rb-cc-test
     -- Directories containing source files.
     hs-source-dirs:   test
 
-    -- The entrypoint to the test suite.
     main-is:          Main.hs
 
     -- Test dependencies.
     build-depends:
-        base ^>=4.17.2.0,
+        base,
         transformers,
-        rb-cc
+        HUnit,
+        cinterpreter
