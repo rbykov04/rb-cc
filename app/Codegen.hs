@@ -2,6 +2,7 @@ module Codegen where
 import RBCC
 import Data.List
 import Data.Char
+import Error
 import Control.Monad.Trans.Except
 import Control.Monad.State
 

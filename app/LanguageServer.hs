@@ -2,7 +2,6 @@ module Main where
 import System.IO ()
 import RBCC (
             Node_ (..)
-            , Error (..)
             , TypeKind (..)
             , Type (..)
             , Obj (..)
@@ -16,7 +15,9 @@ import Tokenize ( tokenize_
                 )
 import Parse (parse)
 import Parse2
-import Error (printError)
+import Error ( printError
+            , Error (..)
+             )
 import Text.Printf (printf)
 import Data.List.Split (splitOn)
 

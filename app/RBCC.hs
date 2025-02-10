@@ -4,16 +4,12 @@ import Control.Monad.State
 import Data.IntMap.Lazy (IntMap, (!))
 import qualified Data.IntMap.Lazy as IntMap
 import Tokenize
+import Error
 
 --
 -- Parser
 --
 
-data Error = ErrorCode Int
-           | ErrorText String
-           | ErrorLoc Int String
-           | ErrorToken Token String
-           deriving Show
 data BinOp =
   Add
   | Sub      -- -

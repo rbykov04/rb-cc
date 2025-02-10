@@ -1,9 +1,14 @@
 module Error where
-import RBCC
 import Tokenize
 import Data.List
-import Tokenize (getLines)
+import Tokenize
 import System.IO
+
+data Error = ErrorCode Int
+           | ErrorText String
+           | ErrorLoc Int String
+           | ErrorToken Token String
+           deriving Show
 
 errorAt :: String -> Int -> String -> IO (Int)
 errorAt current_input loc text = do

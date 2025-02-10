@@ -1,6 +1,6 @@
 module Parse2 where
-import RBCC
-import Type
+--import RBCC
+import Error
 import Tokenize
 import Data.List
 

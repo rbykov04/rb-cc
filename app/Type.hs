@@ -5,6 +5,7 @@ import System.Environment
 import System.IO
 import RBCC
 import Tokenize
+import Error
 import Data.List
 
 size_of (Type _ size) = size

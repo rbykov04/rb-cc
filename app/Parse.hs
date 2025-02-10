@@ -23,6 +23,7 @@ import RBCC
 import Codegen
 import Tokenize
 import Type
+import Error
 import Data.List
 
 import Control.Monad.Trans.Except
