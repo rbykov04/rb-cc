@@ -22,6 +22,7 @@ import Text.Printf (printf)
 import Data.List.Split (splitOn)
 
 import Data.IntMap (elems)
+import CInterpreter
 --import qualified MyLib (someFunc)
 
 
@@ -352,6 +353,7 @@ parserStage file = do
     ++ [rowLine]
     ++ (codeView2 file funcs)
     ++ [rowLine] ++ [show prog_]
+    ++ [rowLine] ++ runMachine prog_
     ++ [rowLine]
 
 main :: IO (Int)

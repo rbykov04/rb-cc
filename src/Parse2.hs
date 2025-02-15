@@ -12,12 +12,19 @@ newtype Context = Context Token
 mkCtx :: Token -> Context
 mkCtx = Context
 
-data Expr = Prim Primary deriving (Show, Eq)
-data Stmt = Return Context Expr
-          | Block Context [Stmt]
+data Primary = Number Context Int
+  | Var Context String
+  deriving (Eq, Show)
+
+
+data Expr = Prim Primary
+          | ASSIGN Context Expr Expr
           deriving (Show, Eq)
 
-
+data Stmt = Return Context Expr
+          | Stmt_Expr Context Expr
+          | Block Context [Stmt]
+          deriving (Show, Eq)
 
 data Declspec = DeclInt Context
               | DeclChar Context
@@ -247,21 +254,6 @@ parserIF cond thn els toks = do
     then thn toks
     else els toks
 
-assign toks = do
-  tbd "assign"
-  {-
-  lhs <- equality
-  kind <- seeHeadTokenKind
-  case kind of
-    Punct "=" -> do
-      tok <- popHeadToken
-      rhs <- assign
-      add_type (Assign lhs rhs) tok
-    _ -> return lhs
--}
-
-data Primary = Number Context Int
-  deriving (Eq, Show)
 
 mkNumber num tok = Number (mkCtx tok) num
 
@@ -277,50 +269,40 @@ primary toks = do
   case tokenKind tok of
     Num v -> do
       return (mkNumber v tok, toks)
-    _ -> tbd " primary"
-        {-
-    Str str -> do
-          let ty = array_of make_char (length str + 1)
-          o <- new_string_literal (str ++ "\0") ty
-          add_type (VAR o) t
-        Ident str -> do
-          next_kind <- seeHeadTokenKind
-          case next_kind of
-            Punct "(" -> do
-              putTokens (t:ts)
-              funcall
-            _ -> do
-              fv <- find_var str
-              case fv of
-                Nothing -> throwE (ErrorToken t "undefined variable")
-                Just var -> add_type (VAR (objKey var)) t
-        Punct "(" -> do
-          isGnuStatementExpression <- head_equalM (Punct "{")
-          if isGnuStatementExpression
-          then do
-          -- This is a GNU statement expresssion.
-            skip (Punct "{")
-            body <- compound_stmt
-            skip (Punct ")")
-            node <- add_type (STMT_EXPR body) t
-            return node
-          else do
-            node <- expr
-            skip (Punct ")")
-            return node
-        Keyword "sizeof" -> do
-          node <- unary
-          add_type (NUM ((size_of . nodeType) node)) t
-        _ -> throwE (ErrorToken t "expected an expression")
-    [] -> error "not achivable"
--}
+    Ident name -> do
+      return (Var (mkCtx tok) name, toks)
+    _ -> tbd $ "primary " ++ show tok
 
 
-
-expr  toks     = do
+equality  toks     = do
   (p, toks) <- primary toks
   return (Prim p, toks)
---expr       = assign
+
+assign toks = do
+  (lhs, toks) <- equality toks
+  tok <- lookAhead toks
+  case tokenKind tok of
+    (Punct "=") -> do
+      toks <- skip (Punct "=") toks
+      (rhs, toks) <- assign toks
+      return (ASSIGN (mkCtx tok) lhs rhs, toks)
+    _ -> return (lhs, toks)
+
+expr       = assign
+
+-- expr-stmt = expr? ";"
+expr_stmt toks = do
+  tok <- lookAhead toks
+  case tokenKind tok of
+    -- FIXME it is a rubbish: why can't we skip this?
+    (Punct ";") -> do
+      toks <- skip (Punct ";") toks
+      return (Block (mkCtx tok) [], toks)
+    _ -> do
+      (node, toks) <- expr toks
+      toks <- skip (Punct ";") toks
+      return (Stmt_Expr (mkCtx tok) node, toks)
+
 
 
 --stmt = "return" expr ";"
@@ -331,13 +313,13 @@ expr  toks     = do
 --     | expr-stmt
 
 stmt toks = do
-  (tok, toks) <- headToken toks
+  (tok, toks_) <- headToken toks
   case tokenKind tok of
     (Keyword "return") -> do
-      (node, toks) <- expr toks
+      (node, toks) <- expr toks_
       toks <- skip (Punct ";") toks
       return (Return (mkCtx tok) node, toks)
-    _ -> tbd $ "stmt" ++ show tok
+    _ -> expr_stmt toks
     {-
   else if head_equal ts (Keyword "while")
   then do
