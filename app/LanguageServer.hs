@@ -327,15 +327,61 @@ codeView2 file parts =
     in mergeColumnsArr cols
 
 
+codeViewStage :: String -> Either Error [String]
+codeViewStage file = do
 
-parserStage :: String -> Either Error [String]
-parserStage file = do
   toks                  <- (errAdapter . tokenize_) file
   (globals, _, storage) <- (parse . convert_keywords) toks
-  vars                <- anotherParser file toks
-  funcs               <- anotherParser2 file toks
-  prog_ <- (parse2 . convert_keywords) toks
-  let raw_c_stage  = RawCStage.printProgram prog_
+  let st = elems storage
+  return
+    $  [rowLine]
+    ++ (codeView file st)
+
+codeView2Stage :: String -> Either Error [String]
+codeView2Stage file = do
+
+  toks                  <- (errAdapter . tokenize_) file
+  (globals, _, storage) <- (parse . convert_keywords) toks
+  vars                  <- anotherParser file toks
+  funcs                 <- anotherParser2 file toks
+
+  return $
+    [rowLine]
+    ++ (codeView2 file vars)
+    ++ [rowLine]
+    ++ (codeView2 file funcs)
+
+codeIR2Stage :: String -> Either Error [String]
+codeIR2Stage file = do
+
+  toks                  <- (errAdapter . tokenize_) file
+  prog_                 <- (parse2 . convert_keywords) toks
+
+  let raw_c_stage       = RawCStage.printProgram prog_
+  let ir2               = concat raw_c_stage
+
+  toks2                 <- (errAdapter . tokenize_) ir2
+
+  return  $  [rowLine] ++ raw_c_stage
+
+
+
+selfCheckIR2Stage :: String -> Either Error [String]
+selfCheckIR2Stage file = do
+
+  toks                  <- (errAdapter . tokenize_) file
+  (globals, _, storage) <- (parse . convert_keywords) toks
+  vars                  <- anotherParser file toks
+  funcs                 <- anotherParser2 file toks
+  prog_                 <- (parse2 . convert_keywords) toks
+
+  let raw_c_stage       = RawCStage.printProgram prog_
+  let ir2               = concat raw_c_stage
+
+  toks2                 <- (errAdapter . tokenize_) ir2
+  prog2_                <- RawCStage.parseIR toks2
+
+  let raw_c2_stage       = RawCStage.printProgram prog2_
 
   let res = map show vars
   _  <- codegen globals storage
@@ -353,16 +399,42 @@ parserStage file = do
     ++ (codeView2 file vars)
     ++ [rowLine]
     ++ (codeView2 file funcs)
-    ++ [rowLine] ++ raw_c_stage
-    ++ [rowLine] ++ [show prog_]
+    ++ [rowLine ++ "( ParseC -> Lang2 -> print)"] ++ raw_c_stage
+    ++ [rowLine ++ "( parseC -> Lang2 -> print -> parseLang2 -> print )"] ++ raw_c2_stage
+    -- ++ [rowLine] ++ [show prog_]
    -- ++ [rowLine] ++ runMachine prog_
     ++ [rowLine]
+
+
+runStage :: [String]
+        -> String
+        -> (String -> Either Error [String])
+        -> Either ([String], Error) [String]
+runStage log file stage = do
+  case stage file of
+    Left e -> Left (log, e)
+    Right text -> Right (log ++ text)
+
+work file = do
+  let stages = [ codeViewStage
+               , codeView2Stage
+               , codeIR2Stage
+               , selfCheckIR2Stage
+               ]
+  iter file [] stages
+  where
+    iter file log [] = return log
+    iter file log (stage : ss) = do
+      res <- runStage log file stage
+      iter file res ss
+
 
 main :: IO (Int)
 main = do
   file <- getContents
-  case parserStage file of
-    Left e -> do
+  case work file of
+    Left (log, e) -> do
+      printlnProgram log
       printError file e
     Right text -> do
       printlnProgram text

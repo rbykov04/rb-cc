@@ -44,6 +44,71 @@ data Decl = Function Context Declspec String [Stmt]
 
 newtype Program = Program [Decl] deriving (Eq, Show)
 
+declspecIR toks = do
+  (tok , toks) <- headToken toks
+  case tokenKind tok of
+    (Ident "int") -> return (DeclInt (mkCtx tok), toks)
+    _               -> mkTokError tok "Unkown type"
+
+getIdent toks = do
+  (tok , toks) <- headToken toks
+  case tokenKind tok of
+   (Ident x)  -> return (x, toks)
+   _ -> mkTokError tok "Expected ident"
+
+
+
+varDecl toks = do
+  tok <- lookAhead toks
+  (name , toks) <- getIdent toks
+  toks <- skip (Punct ":") toks
+  (ty, toks) <- declspecIR toks
+  return (Variable (mkCtx tok) name ty, toks)
+
+
+topLevelIR :: [Token] -> Either Error (Decl, [Token])
+topLevelIR toks = do
+  (tok , toks) <- headToken toks
+  case tokenKind tok of
+   (Ident "vars")  -> do
+      (ty, toks) <- declspecIR toks
+      toks <- skip (Punct "{") toks
+      (vars , toks) <- iter toks
+      toks <- skip (Punct "}") toks
+      return (VariableDecl (mkCtx tok) ty vars, toks)
+
+      where iter toks = do
+             tok <- lookAhead toks
+             case tokenKind tok of
+               (Punct "}") -> return ([], toks)
+               _ -> do
+                 (var, toks) <- varDecl toks
+                 (vars, toks) <- iter toks
+                 return (var : vars, toks)
+
+
+   (Ident "fn")    -> tbd $ "fn" ++ show tok
+   _               -> mkTokError tok "Expected or vars or fn"
+
+programIR :: [Token] -> Either Error Program
+programIR toks = do
+    prog <- iter toks
+    return $ Program prog
+    where
+      iter [] = return []
+      iter toks = do
+        (decl, toks)  <- topLevelIR toks
+        prog <- iter toks
+        return (decl : prog)
+
+
+parseIR :: [Token] -> Either Error Program
+parseIR toks = do programIR  (removeEOF toks)
+
+--parseIR tok = return Program []
+
+
+
 addTab :: Int -> [String] -> [String]
 addTab tab arr =
   let
@@ -117,8 +182,8 @@ instance Printable Decl where
     ++ ["body {"]
     ++ concatMap pprint body
     ++ ["}"]
-  pprint (VariableDecl _ _ vars) =
-    ["vars {"]
+  pprint (VariableDecl _ ty vars) =
+    ["vars " ++ pprintOneLine ty ++"{"]
     ++ concatMap pprint vars
     ++ ["}"]
 
@@ -131,8 +196,8 @@ instance Printable Decl where
     ++ ["body {"]
     ++ concatMap (prettyCodePrint (tab+1)) body
     ++ ["}"]
-  prettyCodePrint tab (VariableDecl _ _ vars) =
-    ["vars {"]
+  prettyCodePrint tab (VariableDecl _ ty vars) =
+    ["vars " ++ pprintOneLine ty ++" {"]
     ++ concatMap (prettyCodePrint (tab+1)) vars
     ++ ["}"]
 
@@ -144,9 +209,9 @@ instance Printable Program where
   prettyCodePrint tab (Program prog) = concatMap (prettyCodePrint tab) prog
 
 
+
 printProgram :: Program -> [String]
 printProgram = prettyCodePrint 0
-
 
 --TODO think about dubliaction type of var in Decl and VarDecl
 
