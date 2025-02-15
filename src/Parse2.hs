@@ -44,6 +44,110 @@ data Decl = Function Context Declspec String [Stmt]
 
 newtype Program = Program [Decl] deriving (Eq, Show)
 
+addTab :: Int -> [String] -> [String]
+addTab tab arr =
+  let
+      prefix = replicate (tab*4) ' '
+  in map (\x -> prefix ++ x) arr
+
+class Printable a where
+  pprint :: a -> [String]
+  pprintOneLine :: a -> String
+  pprintOneLine a = concat (pprint a)
+  prettyCodePrint :: Int -> a -> [String]
+  prettyCodePrint tab a =
+    let
+      code = pprint a
+    in addTab tab code
+
+
+
+instance Printable Primary where
+  pprint :: Primary -> [String]
+  pprint (Number _ v) = ["number " ++ show v]
+  pprint (Var _ v) = ["var " ++ v]
+
+instance Printable Expr where
+  pprint :: Expr -> [String]
+  pprint (Prim p) = pprint p
+  pprint (ASSIGN _ lhs rhs) = ["assign (" ++ pprintOneLine lhs ++ ") = (" ++ pprintOneLine rhs ++ ")"]
+  pprint _ = []
+
+
+
+instance Printable Stmt where
+  pprint :: Stmt -> [String]
+  pprint (Return _ ex)    = ["return " ++ pprintOneLine ex]
+  pprint (Stmt_Expr _ ex) = ["stmt : " ++ pprintOneLine ex]
+  pprint (Block _ body)   =
+    ["block {"]
+    ++ concatMap pprint body
+    ++ ["}"]
+  pprint _                = []
+
+  prettyCodePrint :: Int -> Stmt -> [String]
+  prettyCodePrint tab (Block _ body) =
+      let code = ["block {"] ++ concatMap (prettyCodePrint (tab+1)) body ++ ["}"]
+      in addTab tab code
+  prettyCodePrint tab st =
+    let code = pprint st
+    in addTab tab code
+
+
+
+instance Printable Declspec where
+  pprint :: Declspec -> [String]
+  pprint (DeclInt _)= ["int"]
+  pprint _ = []
+
+instance Printable VarDecl where
+  pprint :: VarDecl -> [String]
+  pprint (Variable _ name ty) = [name ++ " : " ++ pprintOneLine ty]
+  pprint (Pointer _ name ty)  = [name ++ " : " ++ pprintOneLine ty]
+
+
+
+instance Printable Decl where
+  pprint :: Decl -> [String]
+  pprint (Function _ ty name body ) =
+    ["fn " ++ name]
+    ++ ["args {"]
+    ++ ["}"]
+    ++ ["rettype " ++ pprintOneLine ty]
+    ++ ["body {"]
+    ++ concatMap pprint body
+    ++ ["}"]
+  pprint (VariableDecl _ _ vars) =
+    ["vars {"]
+    ++ concatMap pprint vars
+    ++ ["}"]
+
+  prettyCodePrint :: Int -> Decl -> [String]
+  prettyCodePrint tab (Function _ ty name body ) =
+    ["fn " ++ name]
+    ++ ["args {"]
+    ++ ["}"]
+    ++ ["rettype " ++ pprintOneLine ty]
+    ++ ["body {"]
+    ++ concatMap (prettyCodePrint (tab+1)) body
+    ++ ["}"]
+  prettyCodePrint tab (VariableDecl _ _ vars) =
+    ["vars {"]
+    ++ concatMap (prettyCodePrint (tab+1)) vars
+    ++ ["}"]
+
+instance Printable Program where
+  pprint :: Program -> [String]
+  pprint (Program prog) = concatMap pprint prog
+
+  prettyCodePrint :: Int -> Program -> [String]
+  prettyCodePrint tab (Program prog) = concatMap (prettyCodePrint tab) prog
+
+
+printProgram :: Program -> [String]
+printProgram = prettyCodePrint 0
+
+
 --TODO think about dubliaction type of var in Decl and VarDecl
 
 mkVarDec ty varArr tok = VariableDecl (mkCtx tok) ty varArr
@@ -394,14 +498,14 @@ function :: [Token] -> Either Error (Decl, [Token])
 function toks = do
   (ty, toks) <- declspec toks
   (tok, _) <- headToken toks
-  (ftype, toks) <- declarator ty toks
-
-  toks <- skip (Punct "{") toks
-
-  (statements, toks) <- compoundStmt toks
-
-  toks <- skip (Punct "}") toks
-  return (mkFuncDecl ty "???" [statements] tok, toks)
+  case tokenKind tok of
+    (Ident name) -> do
+      (ftype, toks) <- declarator ty toks
+      toks <- skip (Punct "{") toks
+      (statements, toks) <- compoundStmt toks
+      toks <- skip (Punct "}") toks
+      return (mkFuncDecl ty name [statements] tok, toks)
+    _ -> mkTokError tok "Expected Ident"
 
 
   --let nodes = [s]
@@ -430,3 +534,4 @@ removeEOF (x : xs) = case tokenKind x of
 
 parse2 :: [Token] -> Either Error Program
 parse2 toks = do program  (removeEOF toks)
+

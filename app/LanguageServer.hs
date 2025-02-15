@@ -14,7 +14,7 @@ import Tokenize ( tokenize_
                 , Token (..)
                 )
 import Parse (parse)
-import Parse2
+import Parse2 as RawCStage
 import Error ( printError
             , Error (..)
              )
@@ -335,6 +335,7 @@ parserStage file = do
   vars                <- anotherParser file toks
   funcs               <- anotherParser2 file toks
   prog_ <- (parse2 . convert_keywords) toks
+  let raw_c_stage  = RawCStage.printProgram prog_
 
   let res = map show vars
   _  <- codegen globals storage
@@ -352,8 +353,9 @@ parserStage file = do
     ++ (codeView2 file vars)
     ++ [rowLine]
     ++ (codeView2 file funcs)
+    ++ [rowLine] ++ raw_c_stage
     ++ [rowLine] ++ [show prog_]
-    ++ [rowLine] ++ runMachine prog_
+   -- ++ [rowLine] ++ runMachine prog_
     ++ [rowLine]
 
 main :: IO (Int)
