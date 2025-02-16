@@ -163,4 +163,5 @@ test-suite rb-cc-test
         base,
         transformers,
         HUnit,
+        split,
         rb-cc-lib

@@ -1,0 +1,11 @@
+c language
+//==
+int x;
+int y;
+
+//==
+//c stage1 lang
+//==
+vars int {
+    x : int
+}

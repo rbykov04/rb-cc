@@ -6,17 +6,21 @@ import Data.List
 
 
 
-newtype Context = Context Token
+data Context = Context Token
+                | NullCtx String
   deriving (Show, Eq)
 
 mkCtx :: Token -> Context
 mkCtx = Context
 
+mkNullCtx = NullCtx ""
+mkNullCtxText s = NullCtx s
+
 data Primary = Number Context Int
   | Var Context String
   deriving (Eq, Show)
 
-
+  --FIXME nullCtx for Prim??
 data Expr = Prim Primary
           | ASSIGN Context Expr Expr
           deriving (Show, Eq)
@@ -43,6 +47,100 @@ data Decl = Function Context Declspec String [Stmt]
           deriving (Eq, Show)
 
 newtype Program = Program [Decl] deriving (Eq, Show)
+
+
+data MetaIR = LeafIR      Context String                        [String]
+            | NodeUnIR    Context String MetaIR                 [String]
+            | NodeBinIR   Context String MetaIR MetaIR          [String]
+            | NodeListIR  Context String [MetaIR]               [String]
+            | NodeList1IR Context String MetaIR        [MetaIR] [String]
+  deriving (Show, Eq)
+
+getContext :: MetaIR -> Context
+getContext  (LeafIR      ctx _ _) = ctx
+getContext  (NodeUnIR    ctx _ _ _) = ctx
+getContext  (NodeBinIR   ctx _ _ _ _) = ctx
+getContext  (NodeListIR  ctx _ _ _) = ctx
+getContext  (NodeList1IR ctx _ _ _ _) = ctx
+
+
+assertArrEq :: [MetaIR] -> [MetaIR] -> Either (Context, Context) ()
+assertArrEq [] [] = Right ()
+assertArrEq a [] = Left (getContext (head a), mkNullCtxText "end of Arr")
+assertArrEq [] b = Left (mkNullCtxText "End of arr", getContext (head b))
+assertArrEq (a:as) (b: bs) = do
+  assertEq a b
+  assertArrEq as bs
+
+
+
+assertEq :: MetaIR -> MetaIR -> Either (Context, Context) ()
+assertEq (LeafIR ctxA nameA a) (LeafIR ctxB nameB b) =
+  if nameA == nameB && a == b
+  then Right ()
+  else Left (ctxA, ctxB)
+assertEq (NodeUnIR ctxA nameA vA a) (NodeUnIR ctxB nameB vB b) =
+  if nameA == nameB && a == b
+  then assertEq vA vB
+  else Left (ctxA, ctxB)
+assertEq (NodeBinIR ctxA nameA lA rA a) (NodeBinIR ctxB nameB lB rB b) =
+  if nameA == nameB && a == b
+  then do
+    assertEq lA lB
+    assertEq rA rB
+  else Left (ctxA, ctxB)
+assertEq (NodeListIR ctxA nameA vA a) (NodeListIR ctxB nameB vB b) =
+  if nameA == nameB && a == b
+  then do
+    assertArrEq vA vB
+  else Left (ctxA, ctxB)
+assertEq (NodeList1IR ctxA nameA lA vA a) (NodeList1IR ctxB nameB lB vB b) =
+  if nameA == nameB && a == b
+  then do
+    assertEq lA lB
+    assertArrEq vA vB
+  else Left (ctxA, ctxB)
+assertEq a b = Left (getContext a, getContext b)
+
+class Serializable a where
+  des :: a -> MetaIR
+  ser :: MetaIR -> Either Error a
+
+instance Serializable Primary where
+  des (Number ctx v) = LeafIR ctx "Number" [show v]
+  des (Var    ctx v) = LeafIR ctx "Var" [v]
+
+instance Serializable Expr where
+  des (Prim  v)            = NodeUnIR (mkNullCtxText "Prim") "Prim" (des v) []
+  des (ASSIGN ctx lhs rhs) = NodeBinIR ctx "ASSIGN" (des lhs) (des rhs) []
+
+instance Serializable Stmt where
+  des (Return ctx v)    = NodeUnIR ctx "Return" (des v) []
+  des (Stmt_Expr ctx v) = NodeUnIR ctx "Stmt_Expr" (des v) []
+  des (Block ctx arr)   = NodeListIR ctx "Block" (map des arr) []
+
+
+instance Serializable Declspec where
+  des (DeclInt ctx)       = LeafIR    ctx "DeclInt" []
+  des (DeclChar ctx)      = LeafIR    ctx "DeclChar" []
+  des (DeclArr ty s)      = NodeUnIR mkNullCtx "DeclArr" (des ty) [show s]
+  des (DeclPtr v)         = NodeUnIR  mkNullCtx "DeclPtr" (des v) []
+  des (DeclFunc v ctx)    = NodeUnIR  ctx "DeclFunc" (des v) []
+
+instance Serializable VarDecl where
+  des (Pointer  ctx name ty)       = NodeUnIR ctx "Pointer"  (des ty) [show name]
+  des (Variable ctx name ty)       = NodeUnIR ctx "Variable" (des ty) [show name]
+
+
+instance Serializable Decl where
+  des (Function     ctx ty name v)  = NodeList1IR ctx "Function"  (des ty) (map des v) [show name]
+  des (VariableDecl ctx ty v)       = NodeList1IR ctx "VariableDecl" (des ty) (map des v) []
+
+
+instance Serializable Program where
+  des (Program v)  = NodeListIR (mkNullCtxText "Program") "Program" (map des v) []
+
+
 
 declspecIR toks = do
   (tok , toks) <- headToken toks
