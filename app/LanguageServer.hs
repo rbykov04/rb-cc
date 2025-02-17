@@ -23,35 +23,16 @@ import Data.List.Split (splitOn)
 
 import Data.IntMap (elems)
 import CInterpreter
+import Helpers
+import Data.List
+
 --import qualified MyLib (someFunc)
 
 
-printlnProgram :: [String] -> IO ()
-printlnProgram [] = return ()
-printlnProgram (s:ss) = do
-  printf "%s\n" s
-  printlnProgram ss
-
-printTextErr :: [String] -> IO (Int)
-printTextErr [] = return 1
-printTextErr (a : as) = do
-  hPutStrLn stderr a
-  printTextErr as
-
-bind3args out in3 = let
-    e = (.) out
-    g = (.) e
-    f = (.) g
-    in f in3
 
 printError' :: String -> Error -> IO (Int)
 printError' input err = do
   printTextErr (printError input err)
-
-
-
-
-
 
 nameNode_ :: Node_ -> String
 nameNode_ (BLOCK _)      = "BLOCK"
@@ -307,10 +288,6 @@ showTokens file toks =
   in
     rowLine : (f ++ t)
 
-errAdapter :: Either (Int, String) a -> Either Error a
-errAdapter (Left (loc, text)) = Left $ ErrorLoc loc text
-errAdapter (Right a) = Right a
-
 highlight :: String -> [(Int, Int)] -> String
 highlight text [] = text
 highlight text ((b, e) : ss) =
@@ -449,9 +426,12 @@ work file = do
       iter file res ss
 
 
+
+
 main :: IO (Int)
 main = do
   file <- getContents
+
   case work file of
     Left (log, e) -> do
       printlnProgram log

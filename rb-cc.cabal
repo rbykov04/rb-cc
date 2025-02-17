@@ -125,11 +125,13 @@ library rb-cc-lib
         Error,
         CInterpreter,
         Parse2,
+        Helpers,
         Tokenize
     hs-source-dirs:   src
     build-depends:
         base,
         transformers,
+        split,
         containers,
         mtl
     default-language: GHC2021

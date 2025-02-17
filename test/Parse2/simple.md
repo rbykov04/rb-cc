@@ -3,27 +3,22 @@ Maybe I need special language to test rb-cc
 
 # program
 ``` test
-program
-    x = in
-    y = parse2 x
-    out =
-end
+a <- parse2 x
+y <- ir2Parse2 y
+assert 
 ```
 
 # testCase1
-## in
-``` c
+```c -> x
 int x;
 int y;
 ```
 
-## 
-expect out
------------------
+``` c-stage1 -> y
 vars int {
     x : int
 }
------------------
+```
 
 
 testCase2
