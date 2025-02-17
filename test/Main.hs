@@ -7,6 +7,7 @@ import Tokenize
 import Parse2 as RawCStage
 import Error
 import Data.List.Split
+import System.IO
 
 prepareTestFile :: String -> Either Error (String, String)
 prepareTestFile file = do
@@ -17,6 +18,26 @@ prepareTestFile file = do
 errAdapter :: Either (Int, String) a -> Either Error a
 errAdapter (Left (loc, text)) = Left $ ErrorLoc loc text
 errAdapter (Right a) = Right a
+
+printTextErr :: [String] -> IO (Int)
+printTextErr [] = return 1
+printTextErr (a : as) = do
+  hPutStrLn stderr a
+  printTextErr as
+
+bind3args out in3 = let
+    e = (.) out
+    g = (.) e
+    f = (.) g
+    in f in3
+
+printError' :: String -> Error -> IO (Int)
+printError' input err = do
+  printTextErr (printError input err)
+
+errorAt' = bind3args printTextErr errorAt
+errorTok' = bind3args printTextErr errorTok
+
 
 foo file = do
         (c, c1) <- prepareTestFile file
@@ -33,7 +54,7 @@ my_test = do
         file <- readFile "test/Parse2/smoke.test"
         case foo file of
                 Left e -> do
-                        printError "" e
+                        printError' "" e
                         assertFailure "we can't parse"
                 Right ((c1, ir1) , (c2, ir2))  -> do
                   let a = des ir1

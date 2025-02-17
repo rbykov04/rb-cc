@@ -1,5 +1,5 @@
 module Main where
-import System.IO ()
+import System.IO
 import RBCC (
             Node_ (..)
             , TypeKind (..)
@@ -31,6 +31,26 @@ printlnProgram [] = return ()
 printlnProgram (s:ss) = do
   printf "%s\n" s
   printlnProgram ss
+
+printTextErr :: [String] -> IO (Int)
+printTextErr [] = return 1
+printTextErr (a : as) = do
+  hPutStrLn stderr a
+  printTextErr as
+
+bind3args out in3 = let
+    e = (.) out
+    g = (.) e
+    f = (.) g
+    in f in3
+
+printError' :: String -> Error -> IO (Int)
+printError' input err = do
+  printTextErr (printError input err)
+
+
+
+
 
 
 nameNode_ :: Node_ -> String
@@ -435,7 +455,7 @@ main = do
   case work file of
     Left (log, e) -> do
       printlnProgram log
-      printError file e
+      printError' file e
     Right text -> do
       printlnProgram text
       return 0

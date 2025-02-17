@@ -44,6 +44,27 @@ parseArgs (opt : v : _) =
   else Left (-1, "rb-cc: unknown opt" ++ opt)
 parseArgs args = Left (-1, "rb-cc: unknown opts " ++ show args)
 
+
+printTextErr :: [String] -> IO (Int)
+printTextErr [] = return 1
+printTextErr (a : as) = do
+  hPutStrLn stderr a
+  printTextErr as
+
+bind3args out in3 = let
+    e = (.) out
+    g = (.) e
+    f = (.) g
+    in f in3
+
+printError' :: String -> Error -> IO (Int)
+printError' input err = do
+  printTextErr (printError input err)
+
+errorAt' = bind3args printTextErr errorAt
+
+
+
 main :: IO (Int)
 main = do
   args <- getArgs
@@ -58,11 +79,11 @@ main = do
       let res = tokenize_ file
       case res of
         Left (loc, text) -> do
-          errorAt file loc text
+          errorAt' file loc text
         Right toks -> do
           let parse_res = (parse . convert_keywords) toks
           case parse_res of
-            Left err -> printError file err
+            Left err -> printError' file err
             Right (globals, _, storage) ->
               case codegen globals storage of
               Right prog -> do
@@ -73,4 +94,4 @@ main = do
 
                 return 0
               Left e -> do
-                printError file e
+                printError' file e
