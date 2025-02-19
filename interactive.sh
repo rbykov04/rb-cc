@@ -11,8 +11,9 @@ BUILD_SCRIPT=build.sh          # might want to change this too
 function run {
 
   (
-    cabal test &&
-    cat 0-current.c | cabal run language-server -- -o t.s -
+    cabal test
+    ##&&
+   ## cat 0-current.c | cabal run language-server -- -o t.s -
   ) || true
 }
 

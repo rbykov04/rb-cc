@@ -11,28 +11,39 @@ import Data.List.Split
 import System.IO
 import Data.List
 
-foo :: String -> Either Error (String, String)
+foo :: String -> Either Error (String, String, String)
 foo file = do
     (c, c1) <- prepareTestFile file
     text <- ppStage1 c
     let res = intercalate "\n" text
-    return (c1, res)
+    return (c, c1, res)
 
-my_test filename = do
+
+
+prettyPrintMetaIR :: String -> Either Error (String, String, String)
+prettyPrintMetaIR file = do
+    (c, c1) <- prepareTestFile file
+    text <- ppStage3 c
+    let res = intercalate "\n" text
+    return (c, c1, res)
+
+
+
+my_test func filename = do
     file <- readFile filename
-    case foo file of
+    case func file of
         Left e -> do
             let report = intercalate "\n" $ printError "" e
             assertFailure report
-        Right (etalon, res)  -> do
+        Right (i, etalon, res)  -> do
             if res == etalon
             then return ()
             else do
-                printDiff res etalon
+                printDiff3 i res etalon
                 assertFailure ""
 
-test1 = TestCase (my_test "test/Parse2/current.test")
-test2 = TestCase (my_test "test/Parse2/vars.test")
+test2 = TestCase (my_test foo                    "test/Parse2/vars.test")
+test1 = TestCase (my_test prettyPrintMetaIR      "test/Parse2/current.test")
 
 tests = TestList [test1, test2]
 

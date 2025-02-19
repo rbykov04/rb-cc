@@ -1,14 +1,6 @@
-c language
+c1 raw language
 
 in
-//==
-int x, a , b;
-int y;
-//==
-
-c stage1 output
-
-out
 //==
 vars int {
     x : int
@@ -18,4 +10,39 @@ vars int {
 vars int {
     y : int
 }
+//==
+
+pritty print of MetaIR
+
+out
+//==
+Program :: NodeListIR
+    VariableDecl :: NodeList1Ir
+            lhs = {
+                    DeclInt :: LeafIR
+            }
+            Variable :: NodeUnIR
+                        load = "x"
+                        lhs = {
+                                    DeclInt :: LeafIR
+                        }
+            Variable :: NodeUnIR
+                        load = "a"
+                        lhs = {
+                                    DeclInt :: LeafIR
+                        }
+            Variable :: NodeUnIR
+                        load = "b"
+                        lhs = {
+                                    DeclInt :: LeafIR
+                        }
+    VariableDecl :: NodeList1Ir
+            lhs = {
+                    DeclInt :: LeafIR
+            }
+            Variable :: NodeUnIR
+                        load = "y"
+                        lhs = {
+                                    DeclInt :: LeafIR
+                        }
 //==

@@ -45,8 +45,26 @@ ppStage1 c_text = do
   prog <- (parse2 . convert_keywords) toks
   return $ RawCStage.printProgram prog
 
+
+ppStage3 :: String -> Either Error [String]
+ppStage3 c_text = do
+  toks <- (errAdapter . tokenize_) c_text
+  prog <- RawCStage.parseIR toks
+  let meta = des prog
+  return $ prettyCodePrint 0 meta
+
 printDiff :: String -> String -> IO ()
 printDiff a b = do
+  printf "===== result =============\n"
+  printf "%s\n" a
+  printf "===== etalon =============\n"
+  printf "%s\n" b
+  printf "==========================\n"
+
+printDiff3 :: String -> String -> String -> IO ()
+printDiff3 i a b = do
+  printf "===== input =============\n"
+  printf "%s\n" i
   printf "===== result =============\n"
   printf "%s\n" a
   printf "===== etalon =============\n"
