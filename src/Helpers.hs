@@ -3,6 +3,8 @@ module Helpers where
 import Tokenize
 import Error
 import Parse2 as RawCStage
+import Printable
+import MetaIR
 
 import System.IO
 import System.Environment

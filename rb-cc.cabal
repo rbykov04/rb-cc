@@ -124,6 +124,9 @@ library rb-cc-lib
     exposed-modules:
         Error,
         CInterpreter,
+        Context,
+        Printable,
+        MetaIR,
         Parse2,
         Helpers,
         Tokenize
