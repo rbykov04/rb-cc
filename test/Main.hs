@@ -18,16 +18,28 @@ foo file = do
     let res = intercalate "\n" text
     return (c, c1, res)
 
-
-
 prettyPrintMetaIR :: String -> Either Error (String, String, String)
 prettyPrintMetaIR file = do
     (c, c1) <- prepareTestFile file
     text <- ppStage3 c
     let res = intercalate "\n" text
     return (c, c1, res)
+{-
+current :: String -> Either Error (String, String, String)
+current file = do
+    (c_raw1, c_raw2)  <- parseTestFile file
+    let a = snd c_raw1
+    let b = snd c_raw2
 
+    toks <- (errAdapter . tokenize_) a
+    prog <- RawCStage.parseIR toks
 
+    toks2 <- (errAdapter . tokenize_) b
+    prog2 <- RawCStage.parseIR toks
+
+    let res = intercalate "\n" text
+    return (c, c1, res)
+-}
 
 my_test func filename = do
     file <- readFile filename
@@ -42,10 +54,15 @@ my_test func filename = do
                 printDiff3 i res etalon
                 assertFailure ""
 
-test2 = TestCase (my_test foo                    "test/Parse2/vars.test")
-test1 = TestCase (my_test prettyPrintMetaIR      "test/Parse2/current.test")
+test1   = TestCase (my_test prettyPrintMetaIR      "test/Parse2/prettyPrintMetaIR.test")
+test2   = TestCase (my_test foo                    "test/Parse2/vars.test")
+--curTest = TestCase (my_test current                "test/Parse2/current.test")
 
-tests = TestList [test1, test2]
+tests = TestList [
+  test1
+  , test2
+ -- , curTest
+  ]
 
 main :: IO ()
 main = runTestTTAndExit tests

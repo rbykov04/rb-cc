@@ -1,6 +1,6 @@
-c1 raw language
+Compare two c1 raw
 
-in
+a:
 //==
 vars int {
     x : int
@@ -11,38 +11,17 @@ vars int {
     y : int
 }
 //==
-
-pritty print of MetaIR
-
-out
+b:
 //==
-Program :: NodeListIR
-    VariableDecl :: NodeList1Ir
-            lhs = {
-                    DeclInt :: LeafIR
-            }
-            Variable :: NodeUnIR
-                        load = "x"
-                        lhs = {
-                                    DeclInt :: LeafIR
-                        }
-            Variable :: NodeUnIR
-                        load = "a"
-                        lhs = {
-                                    DeclInt :: LeafIR
-                        }
-            Variable :: NodeUnIR
-                        load = "b"
-                        lhs = {
-                                    DeclInt :: LeafIR
-                        }
-    VariableDecl :: NodeList1Ir
-            lhs = {
-                    DeclInt :: LeafIR
-            }
-            Variable :: NodeUnIR
-                        load = "y"
-                        lhs = {
-                                    DeclInt :: LeafIR
-                        }
+vars int {
+    x : int
+    a : int
+    b : int
+}
+vars int {
+    y : int
+}
 //==
+result:
+//==
+They are Equal

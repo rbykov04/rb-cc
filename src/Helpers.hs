@@ -19,6 +19,22 @@ prepareTestFile file = do
   let (_ : c_prog : _ : stage1 :_ ) = splitOn "\n//==\n" file
   return (c_prog, stage1)
 
+newtype TestSection = TestSection (String, String) deriving (Show, Eq)
+
+mkTestSection :: [String] -> Either Error TestSection
+mkTestSection []       = mkTextError "can't make TestSection from nothing"
+mkTestSection (a : []) = mkTextError "There are'nt second parts to make TestSection"
+mkTestSection (a : b: []) = return $ TestSection (a, b)
+
+parseTestFile :: String -> Either Error [TestSection]
+parseTestFile file = iter (splitOn "\n//==\n" file)
+  where
+    iter [] = return []
+    iter s = do
+      section <- mkTestSection s
+      last <- iter (drop 2 s)
+      return (section: last)
+
 printTextErr :: [String] -> IO (Int)
 printTextErr [] = return 1
 printTextErr (a : as) = do
