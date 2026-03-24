@@ -29,6 +29,10 @@ app/Error.hs:19:1: warning: [-Wincomplete-patterns]
 3. highlit error construction
 
 ### TODO system to test errors
-###
+### Test system improves
 - [ ] assertEquality + compareTwoIR must print diff in case of error
 
+# Stream Replace Parse with Parse2
+- [x] func main
+- [x] vars 
+- [ ] try c example to parse

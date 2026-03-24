@@ -51,7 +51,7 @@ instance Serializable Expr where
 
 instance Serializable Stmt where
   des (Return ctx v)    = NodeUnIR ctx "Return" (des v) []
-  des (StmtExpr ctx v) = NodeUnIR ctx "Stmt_Expr" (des v) []
+  des (StmtExpr ctx v) = NodeUnIR ctx "StmtExpr" (des v) []
   des (Block ctx arr)   = NodeListIR ctx "Block" (map des arr) []
 
 

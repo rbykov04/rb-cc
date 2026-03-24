@@ -1,0 +1,22 @@
+c language
+
+in
+//==
+int main () {
+
+}
+//==
+
+c stage1 output
+
+out
+//==
+fn main
+args {
+}
+rettype int
+body {
+    block {
+    }
+}
+//==

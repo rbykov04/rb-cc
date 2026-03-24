@@ -47,7 +47,7 @@ my_test func filename = do
     case func file of
         Left e -> do
             let report = intercalate "\n" $ printError "" e
-            assertFailure report
+            assertFailure (report ++ "\n filename: \n" ++ filename)
         Right (i, etalon, res)  -> do
             if res == etalon
             then return ()
@@ -58,12 +58,14 @@ my_test func filename = do
 test1 = TestCase (my_test prettyPrintMetaIR      "test/Parse2/prettyPrintMetaIR.test")
 test2 = TestCase (my_test foo                    "test/Parse2/vars.test")
 test3 = TestCase (my_test compareTwoIR           "test/Parse2/compareTwoIR.test")
+current = TestCase (my_test foo         "test/Parse2/func.test")
 
 tests = TestList
     [
       test1
     , test2
     , test3
+    , current
     ]
 
 main :: IO ()
