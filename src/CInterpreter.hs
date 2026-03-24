@@ -1,6 +1,7 @@
 module CInterpreter where
 
 import Parse2
+import Stage1
 
 newtype Memory   = Memory [(String, Int)] deriving (Show, Eq)
 lookupMem :: Memory -> String -> Maybe Int
@@ -36,7 +37,7 @@ convert' _  = []
 
 convertSt :: Stmt -> [Op]
 convertSt (Block _ body) = concatMap convertSt body
-convertSt (Stmt_Expr _ (ASSIGN _ (Prim (Var _ name)) (Prim src))) =
+convertSt (StmtExpr _ (ASSIGN _ (Prim (Var _ name)) (Prim src))) =
     case src of
       Var _ x ->  [Copy name x]
       Number _ x -> [Put name x]

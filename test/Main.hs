@@ -4,7 +4,8 @@ import Test.HUnit
 import qualified System.Exit as Exit
 import CInterpreter
 import Tokenize
-import Parse2 as RawCStage
+import Stage1
+import MetaIR
 import Error
 import Helpers
 import Data.List.Split
@@ -24,22 +25,22 @@ prettyPrintMetaIR file = do
     text <- ppStage3 c
     let res = intercalate "\n" text
     return (c, c1, res)
-{-
-current :: String -> Either Error (String, String, String)
-current file = do
-    (c_raw1, c_raw2)  <- parseTestFile file
-    let a = snd c_raw1
-    let b = snd c_raw2
 
+compareTwoIR :: String -> Either Error (String, String, String)
+compareTwoIR file = do
+    sections  <- parseTestFile file
+    let (TestSection c1 : TestSection c2 : _) = sections
+    let a = snd c1
+    let b = snd c2
     toks <- (errAdapter . tokenize_) a
-    prog <- RawCStage.parseIR toks
+    prog <- Stage1.parseIR toks
+    let meta1 = des prog
 
     toks2 <- (errAdapter . tokenize_) b
-    prog2 <- RawCStage.parseIR toks
-
-    let res = intercalate "\n" text
-    return (c, c1, res)
--}
+    prog2 <- Stage1.parseIR toks2
+    let meta2 = des prog2
+    assertEquality meta1 meta2
+    return (a, "They are Equal", "They are Equal")
 
 my_test func filename = do
     file <- readFile filename
@@ -54,15 +55,16 @@ my_test func filename = do
                 printDiff3 i res etalon
                 assertFailure ""
 
-test1   = TestCase (my_test prettyPrintMetaIR      "test/Parse2/prettyPrintMetaIR.test")
-test2   = TestCase (my_test foo                    "test/Parse2/vars.test")
---curTest = TestCase (my_test current                "test/Parse2/current.test")
+test1 = TestCase (my_test prettyPrintMetaIR      "test/Parse2/prettyPrintMetaIR.test")
+test2 = TestCase (my_test foo                    "test/Parse2/vars.test")
+test3 = TestCase (my_test compareTwoIR           "test/Parse2/compareTwoIR.test")
 
-tests = TestList [
-  test1
-  , test2
- -- , curTest
-  ]
+tests = TestList
+    [
+      test1
+    , test2
+    , test3
+    ]
 
 main :: IO ()
 main = runTestTTAndExit tests

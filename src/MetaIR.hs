@@ -150,6 +150,16 @@ assertEq (NodeList1IR ctxA nameA lA vA a) (NodeList1IR ctxB nameB lB vB b) =
   else Left (ctxA, ctxB)
 assertEq a b = Left (getContext a, getContext b)
 
+
+assertEquality :: MetaIR -> MetaIR -> Either Error ()
+assertEquality a b =
+      case assertEq a b of
+        Left (c1, c2) -> do
+                mkTextError "They are not Equal"
+        Right ()  -> Right ()
+
+
+
 class Serializable a where
   des :: a -> MetaIR
   ser :: MetaIR -> Either Error a

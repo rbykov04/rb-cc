@@ -127,6 +127,7 @@ library rb-cc-lib
         Context,
         Printable,
         MetaIR,
+        Stage1,
         Parse2,
         Helpers,
         Tokenize

@@ -8,6 +8,10 @@ data Error = ErrorCode Int
            | ErrorToken Token String
            deriving Show
 
+mkTokError tok err = Left $ ErrorToken tok err
+mkTextError err = Left $ ErrorText err
+
+
 
 errorAt :: String -> Int -> String -> [String]
 errorAt current_input loc text = [current_input] ++ [replicate loc ' ' ++ "^ " ++ text]

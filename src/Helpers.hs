@@ -2,7 +2,8 @@ module Helpers where
 
 import Tokenize
 import Error
-import Parse2 as RawCStage
+import Stage1 as RawCStage
+import Parse2
 import Printable
 import MetaIR
 
@@ -24,9 +25,13 @@ prepareTestFile file = do
 newtype TestSection = TestSection (String, String) deriving (Show, Eq)
 
 mkTestSection :: [String] -> Either Error TestSection
-mkTestSection []       = mkTextError "can't make TestSection from nothing"
-mkTestSection (a : []) = mkTextError "There are'nt second parts to make TestSection"
-mkTestSection (a : b: []) = return $ TestSection (a, b)
+mkTestSection input =
+  let
+    size = length input
+  in if size == 0
+     then mkTextError "can't make TestSection from nothing"
+     else if size == 1 then mkTextError "There are'nt second parts to make TestSection"
+     else return $ TestSection (head input, head (tail input))
 
 parseTestFile :: String -> Either Error [TestSection]
 parseTestFile file = iter (splitOn "\n//==\n" file)
@@ -61,6 +66,7 @@ ppStage1 :: String -> Either Error [String]
 ppStage1 c_text = do
   toks <- (errAdapter . tokenize_) c_text
   prog <- (parse2 . convert_keywords) toks
+  let meta = des prog
   return $ RawCStage.printProgram prog
 
 
