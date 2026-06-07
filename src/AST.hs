@@ -1,14 +1,10 @@
-module RBCC where
+module AST where
 import Control.Monad.Trans.Except
 import Control.Monad.State
 import Data.IntMap.Lazy (IntMap, (!))
 import qualified Data.IntMap.Lazy as IntMap
 import Tokenize
 import Error
-
---
--- Parser
---
 
 data BinOp =
   Add
@@ -115,23 +111,3 @@ data Scope = Scope
   }
   deriving (Show, Eq)
 
-type Vars = ([Obj], [Obj])
-type ParserState = ([Token], Vars, IntMap Obj, Int, [Scope])
-
-fst'   (a, _, _, _, _) = a
-snd'   (_, a, _, _, _) = a
-thrd'  (_, _, a, _, _) = a
-forth' (_, _, _, a, _) = a
-fifth' (_, _, _, _, a) = a
-
-
-getVars :: ExceptT Error (State ParserState) (IntMap Obj)
-getVars = do
-  r <- get
-  return $ thrd' r
-
-
-get_var :: Int -> ExceptT Error (State ParserState) Obj
-get_var key = do
-  vars <- getVars
-  return $ vars ! key

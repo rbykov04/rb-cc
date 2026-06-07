@@ -1,5 +1,5 @@
 module Codegen where
-import RBCC
+import AST
 import Data.List
 import Data.Char
 import Error

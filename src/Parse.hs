@@ -19,7 +19,7 @@
 module Parse where
 import System.Environment
 import System.IO
-import RBCC
+import AST
 import Codegen
 import Tokenize
 import Type
@@ -30,6 +30,74 @@ import Control.Monad.Trans.Except
 import Control.Monad.State
 import Data.IntMap.Lazy (IntMap, (!))
 import qualified Data.IntMap.Lazy as IntMap
+type Vars = ([Obj], [Obj])
+type ParserState = ([Token], Vars, IntMap Obj, Int, [Scope])
+
+fst'   (a, _, _, _, _) = a
+snd'   (_, a, _, _, _) = a
+thrd'  (_, _, a, _, _) = a
+forth' (_, _, _, a, _) = a
+fifth' (_, _, _, _, a) = a
+
+
+getVars :: ExceptT Error (State ParserState) (IntMap Obj)
+getVars = do
+  r <- get
+  return $ thrd' r
+
+
+get_var :: Int -> ExceptT Error (State ParserState) Obj
+get_var key = do
+  vars <- getVars
+  return $ vars ! key
+
+add_type nodeKind tok = case nodeKind of
+  UNARY op node -> case op of
+    Addr -> case (typeKind. nodeType) node of
+      ARRAY base _ -> do
+        let ty = pointer_to base
+        return $ Node nodeKind ty tok
+      _              -> do
+        let ty = (pointer_to . nodeType) node
+        return $ Node nodeKind ty tok
+
+    Deref -> case (typeKind. nodeType) node of
+      ARRAY base _ -> do
+        return $ Node nodeKind base tok
+      PTR base -> do
+        return $ Node nodeKind base tok
+      _ -> throwE (ErrorToken tok "invalid pointer dereference")
+
+
+    _    -> do
+      let ty = nodeType node
+      return $ Node nodeKind ty tok
+
+  BIN_OP _ lhs _ -> do
+    let ty = nodeType lhs
+    return $ Node nodeKind ty tok
+
+  Assign lhs _ -> do
+    let ty = nodeType lhs
+    return $ Node nodeKind ty tok
+
+  VAR key -> do
+    obj <- get_var key
+    return $ Node nodeKind (objType obj) tok
+
+  STMT_EXPR body -> do
+    case body of
+      Node (BLOCK blocks) _ _ -> do
+        case (last' blocks) of
+          Node (EXPS_STMT x) _ tt -> do
+            let ty = nodeType x
+            --throwE (ErrorToken tok ("types: " ++ show x))
+            return $ Node nodeKind ty tt
+      _ -> throwE (ErrorToken tok "statement expression returning void is not supported")
+
+  _ -> return $ Node nodeKind make_int tok
+
+
 
 head_equal :: [Token] -> TokenKind -> Bool
 head_equal ((Token (Punct a) _ _) : _) (Punct b) = a == b

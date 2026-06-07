@@ -81,7 +81,7 @@ library rb-cc-lib
         Context,
         Codegen,
         Parse,
-        RBCC,
+        AST,
         Type,
         Tokenize
     hs-source-dirs:   src
