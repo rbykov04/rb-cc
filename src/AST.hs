@@ -128,3 +128,12 @@ data Scope = Scope
     scopeVars :: [VarScope]
   }
   deriving (Show, Eq)
+
+--tmp
+data ParserState = ParserState
+  { tokens      :: [Token]
+  , currentVars :: ([Obj], [Obj])
+  , allObjects  :: IntMap Obj
+  , uniqCounter :: Int
+  , scopes      :: [Scope]
+  } deriving (Show)

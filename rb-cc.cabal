@@ -82,7 +82,7 @@ library rb-cc-lib
         Codegen,
         Parse,
         AST,
-        Type,
+        Semantic,
         Tokenize
     hs-source-dirs:   src
     build-depends:
