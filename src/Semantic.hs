@@ -107,10 +107,15 @@ putVars :: IntMap Obj -> ExceptT Error (State ParserState) ()
 putVars vars = modify (\s -> s {allObjects = vars})
 
 add_type_pure :: Node_ Typed -> Token -> Either Error (Node Typed)
-add_type_pure nodeKind@(Assign lhs _) tok =
+add_type_pure node tok = case node of
+  Assign lhs _ ->
     let ty = nodeType lhs
-    in Right (Node nodeKind (tok, ty))
-add_type_pure _ tok = Left $ ErrorToken tok "not implemented yet"
+    in Right (Node node (tok, ty))
+
+  BIN_OP _ lhs _ -> do
+    let ty = nodeType lhs
+    return $ Node node (tok, ty)
+  _ ->  Left $ ErrorToken tok "not implemented yet"
 
 
 
@@ -136,13 +141,8 @@ add_type nodeKind tok = case nodeKind of
       let ty = nodeType node
       return $ Node nodeKind (tok, ty)
 
-  BIN_OP _ lhs _ -> do
-    let ty = nodeType lhs
-    return $ Node nodeKind (tok, ty)
-
-  Assign lhs _ -> do
-    let ty = nodeType lhs
-    return $ Node nodeKind (tok, ty)
+  BIN_OP _ lhs _ -> throwE (ErrorToken tok "internal error: deprecated")
+  Assign lhs _ -> throwE (ErrorToken tok "internal error: deprecated")
 
   VAR key -> do
     obj <- get_var key
@@ -289,16 +289,7 @@ checkNode storage node@(Node nodeKind' (tok, ty)) = case nodeKind' of
   BIN_OP op lhs rhs -> do
     tLhs <- checkNode storage lhs
     tRhs <- checkNode storage rhs
-    return $ node { nodeNode = BIN_OP op tLhs tRhs }
-
-  UNARY op n -> do
-    tNode <- checkNode storage n
-    return $ node { nodeNode = UNARY op tNode }
-
-  BLOCK nodes -> do
-    checkedNodes <- mapM (checkNode storage) nodes
-    return $ node { nodeNode = BLOCK checkedNodes }
-
+    add_type_pure (BIN_OP op tLhs tRhs) tok
   _ -> return node
 
 
