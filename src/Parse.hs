@@ -30,20 +30,19 @@ import Control.Monad.Trans.Except
 import Control.Monad.State
 import Data.IntMap.Lazy (IntMap, (!))
 import qualified Data.IntMap.Lazy as IntMap
-type Vars = ([Obj], [Obj])
-type ParserState = ([Token], Vars, IntMap Obj, Int, [Scope])
 
-fst'   (a, _, _, _, _) = a
-snd'   (_, a, _, _, _) = a
-thrd'  (_, _, a, _, _) = a
-forth' (_, _, _, a, _) = a
-fifth' (_, _, _, _, a) = a
-
+data ParserState = ParserState
+  { tokens      :: [Token]
+  , currentVars :: ([Obj], [Obj])
+  , allObjects  :: IntMap Obj
+  , uniqCounter :: Int
+  , scopes      :: [Scope]
+  } deriving (Show)
 
 getVars :: ExceptT Error (State ParserState) (IntMap Obj)
 getVars = do
   r <- get
-  return $ thrd' r
+  return $ allObjects r
 
 
 get_var :: Int -> ExceptT Error (State ParserState) Obj
@@ -159,69 +158,72 @@ postfix       :: ExceptT Error (State ParserState) Node
 newUniqName :: ExceptT Error (State ParserState) String
 newUniqName = do
   r <- get
-  let id_ = forth' r
-  put (fst' r, snd' r, thrd' r, forth' r + 1, fifth' r)
-  return $ ".L.." ++ show id_
+  let counter = uniqCounter r
+  put r {uniqCounter = counter + 1}
+  return $ ".L.." ++ show counter
 
 getTokens :: ExceptT Error (State ParserState) [Token]
 getTokens = do
   r <- get
-  return $ fst' r
+  return $ tokens r
 
 putTokens :: [Token] -> ExceptT Error (State ParserState) ()
 putTokens toks = do
   r <- get
-  put (toks, snd' r, thrd' r, forth' r, fifth' r)
+  put r {tokens = toks}
 
 
 getLocals :: ExceptT Error (State ParserState) [Obj]
 getLocals = do
   r <- get
-  return $ (fst. snd') r
+  return $ (fst. currentVars) r
 
 putLocals :: [Obj] -> ExceptT Error (State ParserState) ()
 putLocals vars = do
   r <- get
-  put (fst' r, (vars, (snd. snd') r), thrd' r, forth' r, fifth' r)
+  let obj = currentVars r
+  put r { currentVars = (vars, snd obj)}
 
 getGlobals :: ExceptT Error (State ParserState) [Obj]
 getGlobals = do
   r <- get
-  return $ (snd. snd') r
+  return $ (snd. currentVars) r
 
 putGlobals :: [Obj] -> ExceptT Error (State ParserState) ()
 putGlobals vars = do
   r <- get
-  put (fst' r, (((fst. snd') r), vars), thrd' r, forth' r, fifth' r)
+  let obj = currentVars r
+  put r { currentVars = (fst obj , vars)}
+
 
 putVars :: IntMap Obj -> ExceptT Error (State ParserState) ()
 putVars vars = do
   r <- get
-  put (fst' r, snd' r, vars, forth' r, fifth' r)
+  put r { allObjects = vars }
 
 
 enterScope :: ExceptT Error (State ParserState) ()
 enterScope = do
   r <- get
-  put (fst' r, snd' r, thrd' r, forth' r, (Scope [] : fifth' r))
+  put r {scopes = (Scope [] : scopes r)}
 
 leaveScope :: ExceptT Error (State ParserState) ()
 leaveScope = do
   r <- get
-  let sc = fifth' r
-  case sc of
+  case scopes r of
     [] -> put r
-    (_: scopes) -> put (fst' r, snd' r, thrd' r, forth' r, scopes)
+    (_: tail_scopes) -> put r {scopes = tail_scopes}
 
 
 pushScope :: String -> Obj -> ExceptT Error (State ParserState) ()
 pushScope name var = do
   r <- get
-  case fifth' r of
+  case scopes r of
     [] ->  throwE (ErrorText "Please enter to scope before")
     ((Scope vars) : scopes) -> do
       let sc = VarScope name var
-      put (fst' r, snd' r, thrd' r, forth' r, (Scope (sc : vars): scopes))
+      let newScopes = Scope (sc : vars): scopes
+      put r {scopes = newScopes}
 
 join_bin ::
    ExceptT Error (State ParserState) Node
@@ -344,7 +346,7 @@ find_var_in name ((Scope (v : vars)): sc_tail) = do
 find_var :: String -> ExceptT Error (State ParserState) (Maybe Obj)
 find_var name = do
   r <- get
-  case fifth' r of
+  case scopes r of
     [] -> do
       return Nothing
     sc -> do
@@ -822,10 +824,19 @@ global_variable = do
         _         -> pure ()
 
 
-
 parse :: [Token] -> Either Error ([Obj], [Token], (IntMap Obj))
 parse toks = do
-  let (r, (tokens, (_, globals), storage, _, _)) = runState (runExceptT program) (toks, ([], []), IntMap.empty, 0 , [])
+  let initState = ParserState
+        { tokens      = toks
+        , currentVars = ([], [])
+        , allObjects  = IntMap.empty
+        , uniqCounter = 0
+        , scopes      = []
+        }
+  let (r, newState) = runState (runExceptT program) initState
+  let toks = tokens newState
+  let globals = (snd . currentVars)  newState
+  let storage = allObjects newState
   case r of
     Left e -> Left e
-    Right _ -> return (globals, tokens, storage)
+    Right _ -> return (globals, toks, storage)
