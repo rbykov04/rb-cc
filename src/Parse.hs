@@ -124,7 +124,10 @@ join_bin sub bin_ops = do
 
 toPunct (str, op) = (Punct str, op)
 
-add_bin op lhs rhs tok = add_type (BIN_OP op lhs rhs) tok
+add_untyped_node node tok = do
+  return $ Node node (tok,  make_int)
+
+add_bin op lhs rhs tok = add_untyped_node (BIN_OP op lhs rhs) tok
 
 mul        = join_bin unary      [("*", add_bin Mul), ("/", add_bin Div)]
 add        = join_bin mul        [("+", new_add), ("-", new_sub)]
@@ -142,9 +145,6 @@ relational = join_bin add
 -- so that p+n points to the location n elements (not bytes) ahead of p.
 -- In other words, we need to scale an integer value before adding to a
 -- pointer value. This function takes care of the scaling.
-
-add_untyped_node node tok = do
-  return $ Node node (tok,  make_int)
 
 assign = do
   lhs <- equality
