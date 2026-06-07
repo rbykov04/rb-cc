@@ -139,21 +139,23 @@ seeHeadTokenKind = do
   return $ tokenKind tok
 
 
-stmt          :: ExceptT Error (State ParserState) Node
-expr_stmt     :: ExceptT Error (State ParserState) Node
-primary       :: ExceptT Error (State ParserState) Node
-funcall       :: ExceptT Error (State ParserState) Node
-unary         :: ExceptT Error (State ParserState) Node
-assign        :: ExceptT Error (State ParserState) Node
-compound_stmt :: ExceptT Error (State ParserState) Node
-declaration   :: ExceptT Error (State ParserState) Node
-expr          :: ExceptT Error (State ParserState) Node
 
-equality      :: ExceptT Error (State ParserState) Node
-relational    :: ExceptT Error (State ParserState) Node
-add           :: ExceptT Error (State ParserState) Node
-mul           :: ExceptT Error (State ParserState) Node
-postfix       :: ExceptT Error (State ParserState) Node
+type Parser = ExceptT Error (State ParserState) (Node Typed)
+stmt          :: Parser
+expr_stmt     :: Parser
+primary       :: Parser
+funcall       :: Parser
+unary         :: Parser
+assign        :: Parser
+compound_stmt :: Parser
+declaration   :: Parser
+expr          :: Parser
+
+equality      :: Parser
+relational    :: Parser
+add           :: Parser
+mul           :: Parser
+postfix       :: Parser
 
 newUniqName :: ExceptT Error (State ParserState) String
 newUniqName = do
@@ -223,9 +225,9 @@ pushScope name var = do
       put r {scopes = newScopes}
 
 join_bin ::
-   ExceptT Error (State ParserState) Node
-   -> [(String, Node->Node->Token -> ExceptT Error (State ParserState) Node)]
-   -> ExceptT Error (State ParserState) Node
+   ExceptT Error (State ParserState) (Node Typed)
+   -> [(String, Node Typed ->Node Typed->Token -> ExceptT Error (State ParserState) (Node Typed))]
+   -> ExceptT Error (State ParserState) (Node Typed)
 
 join_bin sub bin_ops = do
   node <- sub
@@ -272,7 +274,7 @@ ptr_math op ptr ty count token = do
   add_type (BIN_OP op ptr offset) token
 
 
-new_add  :: Node->Node->Token -> ExceptT Error (State ParserState) Node
+new_add  :: Node Typed ->Node Typed ->Token -> ExceptT Error (State ParserState) (Node Typed)
 new_add lhs rhs tok
   | is_integer (nodeType rhs) && is_integer (nodeType lhs) = add_type (BIN_OP Add lhs rhs) tok
   | otherwise =  case ((get_ptr_base . nodeType) lhs, (get_ptr_base . nodeType) rhs) of
@@ -283,7 +285,7 @@ new_add lhs rhs tok
   -- ptr +  ptr
   _ ->  throwE (ErrorToken tok "invalid operands")
 
-new_sub  :: Node->Node->Token -> ExceptT Error (State ParserState) Node
+new_sub  :: Node Typed ->Node Typed ->Token -> ExceptT Error (State ParserState) (Node Typed)
 new_sub lhs rhs tok
   | is_integer (nodeType rhs) && is_integer (nodeType lhs) = add_type (BIN_OP Sub lhs rhs) tok
   | otherwise =  case ((get_ptr_base . nodeType) lhs, (get_ptr_base . nodeType) rhs) of
@@ -685,7 +687,7 @@ compound_stmt  = do
           node <- stmt
           iter (nodes ++ [node])
 
-maybe_expr :: TokenKind -> ExceptT Error (State ParserState) (Maybe Node)
+maybe_expr :: TokenKind -> ExceptT Error (State ParserState) (Maybe (Node Typed))
 maybe_expr tk = do
   isNotExpr <- head_equalM tk
   if isNotExpr

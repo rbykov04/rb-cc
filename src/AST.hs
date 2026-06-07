@@ -1,3 +1,9 @@
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE UndecidableInstances #-}
+
 module AST where
 import Control.Monad.Trans.Except
 import Control.Monad.State
@@ -5,6 +11,14 @@ import Data.IntMap.Lazy (IntMap, (!))
 import qualified Data.IntMap.Lazy as IntMap
 import Tokenize
 import Error
+
+--Phases
+data Parsed
+data Typed
+
+type family XVar p
+type instance XVar Parsed = String
+type instance XVar Typed  = Int
 
 data BinOp =
   Add
@@ -54,35 +68,39 @@ data Type = Type
   }
   deriving (Show, Eq)
 
-data Node_ =
+data Node_ p =
   NUM Int
-  | VAR Int
-  | Assign Node Node  -- =
-  | BIN_OP BinOp Node Node
-  | UNARY UnOp Node
-  | EXPS_STMT Node
-  | STMT_EXPR Node
+  | VAR (XVar p)
+  | Assign (Node p) (Node p)
+  | BIN_OP BinOp (Node p) (Node p)
+  | UNARY UnOp (Node p)
+  | EXPS_STMT (Node p)
+  | STMT_EXPR (Node p)
 --          name    args
-  | FUNCALL String [Node]
-  | RETURN Node            -- "return"
-  | BLOCK [Node]
+  | FUNCALL String [(Node p)]
+  | RETURN (Node p)
+  | BLOCK [(Node p)]
 
 -- "if" statement
 --  IF cond then else
-  | IF Node Node (Maybe Node)
+  | IF (Node p) (Node p) (Maybe (Node p))
 
 -- "for" or "while" statement
 --  FOR init          cond        inc          body
-  | FOR (Maybe Node) (Maybe Node) (Maybe Node) Node
-  deriving (Show, Eq)
+  | FOR (Maybe (Node p)) (Maybe (Node p)) (Maybe (Node p)) (Node p)
 
-data Node = Node
+data Node p = Node
   {
-    nodeNode  :: Node_,
+    nodeNode  :: (Node_ p),
     nodeType  :: Type,
     nodeToken :: Token
   }
-  deriving (Show, Eq)
+
+deriving instance (Show (XVar p)) => Show (Node_ p)
+deriving instance (Eq (XVar p))   => Eq (Node_ p)
+
+deriving instance (Show (XVar p)) => Show (Node p)
+deriving instance (Eq (XVar p))   => Eq (Node p)
 
 data Obj = Obj
   {
@@ -91,7 +109,7 @@ data Obj = Obj
     objType       :: Type  , -- type
     objOffset     :: Int   , -- offset from RBP
     objIsLocal    :: Bool  , -- local or global/function
-    objBody       :: [Node],
+    objBody       :: [Node Typed],
     objLocals     :: [Int],
     objInitData   :: Maybe String -- global_variable
   }
@@ -110,4 +128,3 @@ data Scope = Scope
     scopeVars :: [VarScope]
   }
   deriving (Show, Eq)
-
