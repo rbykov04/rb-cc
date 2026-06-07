@@ -106,20 +106,60 @@ pushScope name var = do
 putVars :: IntMap Obj -> ExceptT Error (State ParserState) ()
 putVars vars = modify (\s -> s {allObjects = vars})
 
+decayType :: Type -> Type
+decayType ty = case typeKind ty of
+  ARRAY base _ -> pointer_to base -- Массив типа T превращается в указатель PTR T
+  _            -> ty             -- Любой другой тип остается без изменений
+
+
+scalePointer :: BinOp -> Token -> Type -> Node Typed -> Node Typed -> Node_ Typed
+scalePointer op tok baseType ptrNode intNode =
+  let sizeNode  = Node (NUM (typeSize baseType)) (tok, make_int)
+      scaledInt = Node (BIN_OP Mul intNode sizeNode) (tok, make_int)
+  in BIN_OP op ptrNode scaledInt
+
 add_type_pure :: Node_ Typed -> Token -> Either Error (Node Typed)
 add_type_pure nodeKind tok = case nodeKind of
-  Assign lhs _ ->
-    let ty = nodeType lhs
-    in Right (Node nodeKind (tok, ty))
+  Assign lhs rhs ->
+    let tyL = decayType (nodeType lhs)
+        tyR = decayType (nodeType rhs)
+        -- TODO: Add check here
+    in Right (Node nodeKind (tok, tyL))
 
-  BIN_OP op lhs _ -> do
-    let tyL = nodeType lhs
-    case op of
-      ND_EQ -> Right (Node nodeKind (tok, make_int))
-      ND_NE -> Right (Node nodeKind (tok, make_int))
-      ND_LT -> Right (Node nodeKind (tok, make_int))
-      ND_LE -> Right (Node nodeKind (tok, make_int))
-      _     -> Right (Node nodeKind (tok, tyL))
+  BIN_OP op lhs rhs ->
+    let tyL = decayType (nodeType lhs)
+        tyR = decayType (nodeType rhs)
+        resType = case op of
+            ND_EQ -> make_int
+            ND_NE -> make_int
+            ND_LT -> make_int
+            ND_LE -> make_int
+            _     -> tyL
+        newNodeKind = case op of
+          Add -> case (typeKind tyL, typeKind tyR) of
+            (PTR base, INT)     -> scalePointer op tok base lhs rhs
+            (PTR base, CHAR)     -> scalePointer op tok base lhs rhs
+            (ARRAY base _, INT) -> scalePointer op tok base lhs rhs
+            (ARRAY base _, CHAR) -> scalePointer op tok base lhs rhs
+
+            (INT, PTR base)     -> scalePointer op tok base rhs lhs
+            (CHAR, PTR base)     -> scalePointer op tok base rhs lhs
+            (INT, ARRAY base _) -> scalePointer op tok base rhs lhs
+            (CHAR, ARRAY base _) -> scalePointer op tok base rhs lhs
+            _                      -> BIN_OP op lhs rhs
+
+          Sub -> case (typeKind tyL, typeKind tyR) of
+            (PTR base, CHAR)     -> scalePointer op tok base lhs rhs
+            (PTR base, INT)     -> scalePointer op tok base lhs rhs
+            (ARRAY base _, CHAR) -> scalePointer op tok base lhs rhs
+            (ARRAY base _, INT) -> scalePointer op tok base lhs rhs
+            (PTR _, PTR _)         -> BIN_OP op lhs rhs
+            _                      -> BIN_OP op lhs rhs
+
+          _ -> BIN_OP op lhs rhs
+
+    in Right (Node newNodeKind (tok, resType))
+
 
   UNARY op node -> case op of
     Addr -> case (typeKind. nodeType) node of
@@ -157,13 +197,10 @@ add_type nodeKind tok = case nodeKind of
       let ty = nodeType node
       return $ Node nodeKind (tok, ty)
 
-  BIN_OP _ lhs _ -> do
-    let ty = nodeType lhs
-    return $ Node nodeKind (tok, ty)
+  BIN_OP _ lhs _ -> throwE (ErrorToken tok "bin op - REMOVED")
 
-  Assign lhs _ -> do
-    let ty = nodeType lhs
-    return $ Node nodeKind (tok, ty)
+  Assign lhs _ -> throwE (ErrorToken tok "assign op - REMOVED")
+
 
   VAR key -> do
     obj <- get_var key
@@ -192,7 +229,7 @@ ptr_math op ptr ty count token = do
   offset <- make_offset ty count token
   add_type (BIN_OP op ptr offset) token
 
-
+{-
 new_add  :: Node Typed ->Node Typed ->Token -> ExceptT Error (State ParserState) (Node Typed)
 new_add lhs rhs tok
   | is_integer (nodeType rhs) && is_integer (nodeType lhs) = add_type (BIN_OP Add lhs rhs) tok
@@ -219,6 +256,7 @@ new_sub lhs rhs tok
         base <- add_type (NUM (typeSize atype)) token
         num <- add_type (BIN_OP Sub a b) tok
         add_type (BIN_OP Div (change_type make_int num) base) tok
+-}
 
 find_var_in :: String -> [Scope] -> ExceptT Error (State ParserState) (Maybe Obj)
 find_var_in _ [] = do
@@ -302,6 +340,10 @@ checkObj storage obj = do
 
 checkNode :: IntMap Obj -> Node Typed -> Either Error (Node Typed)
 checkNode storage node@(Node nodeKind' (tok, ty)) = case nodeKind' of
+  BLOCK list -> do
+    checkedElements <- mapM (checkNode storage) list
+    add_type_pure (BLOCK checkedElements) tok
+
   Assign lhs rhs -> do
     tLhs <- checkNode storage lhs
     tRhs <- checkNode storage rhs

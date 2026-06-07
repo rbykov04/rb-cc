@@ -130,7 +130,7 @@ add_untyped_node node tok = do
 add_bin op lhs rhs tok = add_untyped_node (BIN_OP op lhs rhs) tok
 
 mul        = join_bin unary      [("*", add_bin Mul), ("/", add_bin Div)]
-add        = join_bin mul        [("+", new_add), ("-", new_sub)]
+add        = join_bin mul        [("+", add_bin Add), ("-", add_bin Sub)]
 equality   = join_bin relational [("==", add_bin ND_EQ), ("!=", add_bin ND_NE)]
 relational = join_bin add
   [
@@ -172,7 +172,7 @@ unary = do
       add_unary_type op = do
         tok <- popHeadToken
         node <- unary
-        add_type (UNARY op node) tok
+        add_untyped_node (UNARY op node) tok
 
 
 
@@ -368,8 +368,8 @@ postfix = do
           -- x[y] is short for *(x+y)
           tok <- popHeadToken
           idx <- expr
-          ptr <- new_add node idx tok
-          node' <- add_type (UNARY Deref ptr) tok
+          ptr <- add_untyped_node (BIN_OP Add node idx) tok
+          node' <- add_untyped_node (UNARY Deref ptr) tok
           skip (Punct "]")
           iter node'
         _ -> return node
@@ -408,7 +408,7 @@ declaration = do
         tok <- popHeadToken
         lhs <- add_type (VAR key) tok
         rhs <- assign
-        node <- add_type (Assign lhs rhs) tok
+        node <- add_untyped_node (Assign lhs rhs) tok
         expression  <- add_type (EXPS_STMT node) tok
         return $ nodes ++ [expression]
       else return nodes
