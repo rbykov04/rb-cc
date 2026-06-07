@@ -119,6 +119,11 @@ scalePointer op tok baseType ptrNode intNode =
 
   in BIN_OP op ptrNode scaledInt
 
+diffPointers :: BinOp -> Token -> Type -> Node Typed -> Node Typed -> Node_ Typed
+diffPointers op tok baseType ptrL ptrR =
+  BIN_OP Div (Node (BIN_OP op ptrL ptrR) (tok, make_int))
+             (Node (NUM (typeSize baseType)) (tok, make_int))
+
 add_type_pure :: Node_ Typed -> Token -> Either Error (Node Typed)
 add_type_pure nodeKind tok = case nodeKind of
   Assign lhs rhs ->
@@ -354,6 +359,11 @@ checkNode storage node@(Node nodeKind' (tok, ty)) = case nodeKind' of
             (PTR base, INT)       -> scalePointer op tok base tLhs tRhs
             (ARRAY base _, CHAR)  -> scalePointer op tok base tLhs tRhs
             (ARRAY base _, INT)   -> scalePointer op tok base tLhs tRhs
+
+            (PTR base, PTR _)     -> diffPointers op tok base tLhs tRhs
+            (ARRAY base _, ARRAY _ _) -> diffPointers op tok base tLhs tRhs
+            (PTR base, ARRAY _ _) -> diffPointers op tok base tLhs tRhs
+            (ARRAY base _, PTR _) -> diffPointers op tok base tLhs tRhs
             _                     -> BIN_OP op tLhs tRhs
 
           _ -> BIN_OP op tLhs tRhs
