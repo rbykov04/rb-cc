@@ -101,6 +101,7 @@ data Obj = Obj
   }
   deriving (Show, Eq)
 
+
 data VarScope = VarScope
   {
     scopeName :: String,
