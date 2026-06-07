@@ -112,9 +112,15 @@ add_type_pure node tok = case node of
     let ty = nodeType lhs
     in Right (Node node (tok, ty))
 
-  BIN_OP _ lhs _ -> do
-    let ty = nodeType lhs
-    return $ Node node (tok, ty)
+  BIN_OP op lhs _ -> do
+    let tyL = nodeType lhs
+    case op of
+      ND_EQ -> Right (Node node (tok, make_int))
+      ND_NE -> Right (Node node (tok, make_int))
+      ND_LT -> Right (Node node (tok, make_int))
+      ND_LE -> Right (Node node (tok, make_int))
+      _     -> Right (Node node (tok, tyL))
+
   _ ->  Left $ ErrorToken tok "not implemented yet"
 
 
