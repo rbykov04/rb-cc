@@ -107,19 +107,29 @@ putVars :: IntMap Obj -> ExceptT Error (State ParserState) ()
 putVars vars = modify (\s -> s {allObjects = vars})
 
 add_type_pure :: Node_ Typed -> Token -> Either Error (Node Typed)
-add_type_pure node tok = case node of
+add_type_pure nodeKind tok = case nodeKind of
   Assign lhs _ ->
     let ty = nodeType lhs
-    in Right (Node node (tok, ty))
+    in Right (Node nodeKind (tok, ty))
 
   BIN_OP op lhs _ -> do
     let tyL = nodeType lhs
     case op of
-      ND_EQ -> Right (Node node (tok, make_int))
-      ND_NE -> Right (Node node (tok, make_int))
-      ND_LT -> Right (Node node (tok, make_int))
-      ND_LE -> Right (Node node (tok, make_int))
-      _     -> Right (Node node (tok, tyL))
+      ND_EQ -> Right (Node nodeKind (tok, make_int))
+      ND_NE -> Right (Node nodeKind (tok, make_int))
+      ND_LT -> Right (Node nodeKind (tok, make_int))
+      ND_LE -> Right (Node nodeKind (tok, make_int))
+      _     -> Right (Node nodeKind (tok, tyL))
+
+  UNARY op node -> case op of
+    Addr -> case (typeKind. nodeType) node of
+      ARRAY base _ -> Right (Node nodeKind (tok, pointer_to base))
+      _            -> Right (Node nodeKind (tok, (pointer_to . nodeType) node))
+    Deref -> case (typeKind. nodeType) node of
+      ARRAY base _ -> Right (Node nodeKind (tok, base))
+      PTR base     -> Right (Node nodeKind (tok, base))
+      _ -> Left (ErrorToken tok "invalid pointer dereference")
+    _ -> Right (Node nodeKind (tok, nodeType node))
 
   _ ->  Left $ ErrorToken tok "not implemented yet"
 
@@ -301,6 +311,11 @@ checkNode storage node@(Node nodeKind' (tok, ty)) = case nodeKind' of
     tLhs <- checkNode storage lhs
     tRhs <- checkNode storage rhs
     add_type_pure (BIN_OP op tLhs tRhs) tok
+
+  UNARY op n -> do
+    tNode <- checkNode storage n
+    add_type_pure (UNARY op tNode) tok
+
   _ -> return node
 
 
