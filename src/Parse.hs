@@ -157,9 +157,8 @@ postfix       :: ExceptT Error (State ParserState) Node
 
 newUniqName :: ExceptT Error (State ParserState) String
 newUniqName = do
-  r <- get
-  let counter = uniqCounter r
-  put r {uniqCounter = counter + 1}
+  counter <- gets uniqCounter
+  modify (\s -> s {uniqCounter = counter + 1})
   return $ ".L.." ++ show counter
 
 getTokens :: ExceptT Error (State ParserState) [Token]
@@ -197,9 +196,7 @@ putGlobals vars = do
 
 
 putVars :: IntMap Obj -> ExceptT Error (State ParserState) ()
-putVars vars = do
-  r <- get
-  put r { allObjects = vars }
+putVars vars = modify (\s -> s {allObjects = vars})
 
 
 enterScope :: ExceptT Error (State ParserState) ()
@@ -220,9 +217,9 @@ pushScope name var = do
   r <- get
   case scopes r of
     [] ->  throwE (ErrorText "Please enter to scope before")
-    ((Scope vars) : scopes) -> do
+    ((Scope vars) : tail_scopes) -> do
       let sc = VarScope name var
-      let newScopes = Scope (sc : vars): scopes
+      let newScopes = Scope (sc : vars): tail_scopes
       put r {scopes = newScopes}
 
 join_bin ::
