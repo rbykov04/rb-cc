@@ -116,6 +116,7 @@ scalePointer :: BinOp -> Token -> Type -> Node Typed -> Node Typed -> Node_ Type
 scalePointer op tok baseType ptrNode intNode =
   let sizeNode  = Node (NUM (typeSize baseType)) (tok, make_int)
       scaledInt = Node (BIN_OP Mul intNode sizeNode) (tok, make_int)
+
   in BIN_OP op ptrNode scaledInt
 
 add_type_pure :: Node_ Typed -> Token -> Either Error (Node Typed)
@@ -129,36 +130,15 @@ add_type_pure nodeKind tok = case nodeKind of
   BIN_OP op lhs rhs ->
     let tyL = decayType (nodeType lhs)
         tyR = decayType (nodeType rhs)
+
         resType = case op of
-            ND_EQ -> make_int
-            ND_NE -> make_int
-            ND_LT -> make_int
-            ND_LE -> make_int
-            _     -> tyL
-        newNodeKind = case op of
-          Add -> case (typeKind tyL, typeKind tyR) of
-            (PTR base, INT)     -> scalePointer op tok base lhs rhs
-            (PTR base, CHAR)     -> scalePointer op tok base lhs rhs
-            (ARRAY base _, INT) -> scalePointer op tok base lhs rhs
-            (ARRAY base _, CHAR) -> scalePointer op tok base lhs rhs
+          ND_EQ -> make_int
+          ND_NE -> make_int
+          ND_LT -> make_int
+          ND_LE -> make_int
+          _     -> tyL
 
-            (INT, PTR base)     -> scalePointer op tok base rhs lhs
-            (CHAR, PTR base)     -> scalePointer op tok base rhs lhs
-            (INT, ARRAY base _) -> scalePointer op tok base rhs lhs
-            (CHAR, ARRAY base _) -> scalePointer op tok base rhs lhs
-            _                      -> BIN_OP op lhs rhs
-
-          Sub -> case (typeKind tyL, typeKind tyR) of
-            (PTR base, CHAR)     -> scalePointer op tok base lhs rhs
-            (PTR base, INT)     -> scalePointer op tok base lhs rhs
-            (ARRAY base _, CHAR) -> scalePointer op tok base lhs rhs
-            (ARRAY base _, INT) -> scalePointer op tok base lhs rhs
-            (PTR _, PTR _)         -> BIN_OP op lhs rhs
-            _                      -> BIN_OP op lhs rhs
-
-          _ -> BIN_OP op lhs rhs
-
-    in Right (Node newNodeKind (tok, resType))
+    in Right (Node nodeKind (tok, resType))
 
 
   UNARY op node -> case op of
@@ -352,7 +332,33 @@ checkNode storage node@(Node nodeKind' (tok, ty)) = case nodeKind' of
   BIN_OP op lhs rhs -> do
     tLhs <- checkNode storage lhs
     tRhs <- checkNode storage rhs
-    add_type_pure (BIN_OP op tLhs tRhs) tok
+
+    let tyL = decayType (nodeType tLhs)
+        tyR = decayType (nodeType tRhs)
+
+    -- Перестраиваем узел "на лету" до вызова add_type_pure, если сработала поинтер-арифметика
+    let scaledNodeKind = case op of
+          Add -> case (typeKind tyL, typeKind tyR) of
+            (PTR base, INT)       -> scalePointer op tok base tLhs tRhs
+            (PTR base, CHAR)      -> scalePointer op tok base tLhs tRhs
+            (ARRAY base _, INT)   -> scalePointer op tok base tLhs tRhs
+            (ARRAY base _, CHAR)  -> scalePointer op tok base tLhs tRhs
+            (INT, PTR base)       -> scalePointer op tok base tRhs tLhs
+            (CHAR, PTR base)      -> scalePointer op tok base tRhs tLhs
+            (INT, ARRAY base _)   -> scalePointer op tok base tRhs tLhs
+            (CHAR, ARRAY base _)  -> scalePointer op tok base tRhs tLhs
+            _                     -> BIN_OP op tLhs tRhs
+
+          Sub -> case (typeKind tyL, typeKind tyR) of
+            (PTR base, CHAR)      -> scalePointer op tok base tLhs tRhs
+            (PTR base, INT)       -> scalePointer op tok base tLhs tRhs
+            (ARRAY base _, CHAR)  -> scalePointer op tok base tLhs tRhs
+            (ARRAY base _, INT)   -> scalePointer op tok base tLhs tRhs
+            _                     -> BIN_OP op tLhs tRhs
+
+          _ -> BIN_OP op tLhs tRhs
+
+    add_type_pure scaledNodeKind tok
 
   UNARY op n -> do
     tNode <- checkNode storage n
