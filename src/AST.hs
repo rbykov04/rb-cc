@@ -20,6 +20,13 @@ type family XVar p
 type instance XVar Parsed = String
 type instance XVar Typed  = Int
 
+type family XNodeExt p
+type instance XNodeExt Parsed = Token
+type instance XNodeExt Typed  = (Token, Type)
+
+nodeType :: Node Typed -> Type
+nodeType node = snd (nodeExt node)
+
 data BinOp =
   Add
   | Sub      -- -
@@ -92,15 +99,15 @@ data Node_ p =
 data Node p = Node
   {
     nodeNode  :: (Node_ p),
-    nodeType  :: Type,
-    nodeToken :: Token
+    nodeExt  :: XNodeExt p
   }
 
-deriving instance (Show (XVar p)) => Show (Node_ p)
-deriving instance (Eq (XVar p))   => Eq (Node_ p)
+deriving instance (Show (XVar p), Show (XNodeExt p)) => Show (Node_ p)
+deriving instance (Eq (XVar p),   Eq (XNodeExt p))   => Eq (Node_ p)
 
-deriving instance (Show (XVar p)) => Show (Node p)
-deriving instance (Eq (XVar p))   => Eq (Node p)
+deriving instance (Show (XVar p), Show (XNodeExt p)) => Show (Node p)
+deriving instance (Eq (XVar p),   Eq (XNodeExt p))   => Eq (Node p)
+
 
 data Obj = Obj
   {

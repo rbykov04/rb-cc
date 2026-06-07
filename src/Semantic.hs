@@ -10,6 +10,7 @@ import Data.List
 
 import Data.IntMap.Lazy (IntMap, (!))
 import qualified Data.IntMap.Lazy as IntMap
+
 getVars :: ExceptT Error (State ParserState) (IntMap Obj)
 getVars = do
   r <- get
@@ -47,7 +48,7 @@ last' :: [a] -> a
 last' ys = foldl1 (\_ -> \x -> x) ys
 
 
-change_type new (Node kind _ tok) = Node kind new tok
+change_type new (Node kind (tok, _)) = Node kind (tok, new)
 
 getLocals :: ExceptT Error (State ParserState) [Obj]
 getLocals = do
@@ -105,51 +106,59 @@ pushScope name var = do
 putVars :: IntMap Obj -> ExceptT Error (State ParserState) ()
 putVars vars = modify (\s -> s {allObjects = vars})
 
+add_type_pure :: Node_ Typed -> Token -> Either Error (Node Typed)
+add_type_pure nodeKind@(Assign lhs _) tok =
+    let ty = nodeType lhs
+    in Right (Node nodeKind (tok, ty))
+add_type_pure _ tok = Left $ ErrorToken tok "not implemented yet"
+
+
+
 add_type nodeKind tok = case nodeKind of
   UNARY op node -> case op of
     Addr -> case (typeKind. nodeType) node of
       ARRAY base _ -> do
         let ty = pointer_to base
-        return $ Node nodeKind ty tok
+        return $ Node nodeKind (tok, ty)
       _              -> do
         let ty = (pointer_to . nodeType) node
-        return $ Node nodeKind ty tok
+        return $ Node nodeKind (tok, ty)
 
     Deref -> case (typeKind. nodeType) node of
       ARRAY base _ -> do
-        return $ Node nodeKind base tok
+        return $ Node nodeKind (tok, base)
       PTR base -> do
-        return $ Node nodeKind base tok
+        return $ Node nodeKind (tok, base)
       _ -> throwE (ErrorToken tok "invalid pointer dereference")
 
 
     _    -> do
       let ty = nodeType node
-      return $ Node nodeKind ty tok
+      return $ Node nodeKind (tok, ty)
 
   BIN_OP _ lhs _ -> do
     let ty = nodeType lhs
-    return $ Node nodeKind ty tok
+    return $ Node nodeKind (tok, ty)
 
   Assign lhs _ -> do
     let ty = nodeType lhs
-    return $ Node nodeKind ty tok
+    return $ Node nodeKind (tok, ty)
 
   VAR key -> do
     obj <- get_var key
-    return $ Node nodeKind (objType obj) tok
+    return $ Node nodeKind (tok , (objType obj))
 
   STMT_EXPR body -> do
     case body of
-      Node (BLOCK blocks) _ _ -> do
+      Node (BLOCK blocks) _ -> do
         case (last' blocks) of
-          Node (EXPS_STMT x) _ tt -> do
+          Node (EXPS_STMT x) (tt, _) -> do
             let ty = nodeType x
             --throwE (ErrorToken tok ("types: " ++ show x))
-            return $ Node nodeKind ty tt
+            return $ Node nodeKind (tt , ty)
       _ -> throwE (ErrorToken tok "statement expression returning void is not supported")
 
-  _ -> return $ Node nodeKind make_int tok
+  _ -> return $ Node nodeKind (tok, make_int)
 
 
 
@@ -264,3 +273,34 @@ new_string_literal text ty= do
   return key
   where
     updateFunc data_ obj = obj {objInitData = (Just data_)};
+
+checkObj :: IntMap Obj -> Obj -> Either Error Obj
+checkObj storage obj = do
+  checkedBody <- mapM (checkNode storage) (objBody obj)
+  return $ obj { objBody = checkedBody }
+
+checkNode :: IntMap Obj -> Node Typed -> Either Error (Node Typed)
+checkNode storage node@(Node nodeKind' (tok, ty)) = case nodeKind' of
+  Assign lhs rhs -> do
+    tLhs <- checkNode storage lhs
+    tRhs <- checkNode storage rhs
+    add_type_pure (Assign tLhs tRhs) tok
+
+  BIN_OP op lhs rhs -> do
+    tLhs <- checkNode storage lhs
+    tRhs <- checkNode storage rhs
+    return $ node { nodeNode = BIN_OP op tLhs tRhs }
+
+  UNARY op n -> do
+    tNode <- checkNode storage n
+    return $ node { nodeNode = UNARY op tNode }
+
+  BLOCK nodes -> do
+    checkedNodes <- mapM (checkNode storage) nodes
+    return $ node { nodeNode = BLOCK checkedNodes }
+
+  _ -> return node
+
+
+typecheck :: [Obj] -> IntMap Obj -> Either Error [Obj]
+typecheck globals storage = mapM (checkObj storage) globals

@@ -6,6 +6,7 @@ import System.IO
 import Codegen
 import Tokenize
 import Parse
+import Semantic
 import Error
 import Text.Printf
 import Data.List
@@ -82,14 +83,17 @@ main = do
           let parse_res = (parse . convert_keywords) toks
           case parse_res of
             Left err -> printError' file err
-            Right (globals, _, storage) ->
-              case codegen globals storage of
-              Right prog -> do
-                let filename = opt_o rbArgs
-                if  filename == ""
-                then do printProgram prog
-                else do writeFile filename (intercalate "" prog)
+            Right (globals, toks, storage) ->
+              case typecheck globals storage of
+                Left err -> printError' file err
+                Right checkedGlobals -> do
+                  case codegen checkedGlobals storage of
+                    Right prog -> do
+                      let filename = opt_o rbArgs
+                      if  filename == ""
+                      then do printProgram prog
+                      else do writeFile filename (intercalate "" prog)
 
-                return 0
-              Left e -> do
-                printError' file e
+                      return 0
+                    Left e -> do
+                      printError' file e

@@ -117,7 +117,7 @@ store ty = do
 
 
 gen_addr :: Node Typed -> ExceptT CodegenError (State CodegenState) ()
-gen_addr (Node kind _ tok) = case kind of
+gen_addr (Node kind (tok, _)) = case kind of
   VAR key -> do
     obj <- getVar key
     let offset = objOffset obj
@@ -139,7 +139,7 @@ argreg64 :: [String]
 argreg64 = ["%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9"]
 
 gen_expr ::Node Typed->ExceptT CodegenError (State CodegenState) ()
-gen_expr node@(Node kind ty tok) = case kind of
+gen_expr node@(Node kind (tok , ty)) = case kind of
   VAR _ -> do
     gen_addr node
     load ty
@@ -185,13 +185,13 @@ gen_expr node@(Node kind ty tok) = case kind of
     pop "%rdi"
     genLines $gen_bin_op op
 
-  STMT_EXPR (Node (BLOCK body) _ _) -> do
+  STMT_EXPR (Node (BLOCK body) (_,  _)) -> do
     gen_block body
 
   _ -> throwE $ ErrorToken tok ("Codegen: invalid expression" ++ show (node))
 
 gen_stmt :: Node Typed-> ExceptT CodegenError (State CodegenState) ()
-gen_stmt (Node kind _ tok) = case kind of
+gen_stmt (Node kind (tok, _)) = case kind of
   EXPS_STMT node -> do
     setDepth 0
     gen_expr node

@@ -151,7 +151,7 @@ assign = do
     Punct "=" -> do
       tok <- popHeadToken
       rhs <- assign
-      add_type (Assign lhs rhs) tok
+      return $ Node (Assign lhs rhs) (tok, make_int)
     _ -> return lhs
 
 expr       = assign
