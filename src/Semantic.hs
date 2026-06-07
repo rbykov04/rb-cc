@@ -147,8 +147,13 @@ add_type nodeKind tok = case nodeKind of
       let ty = nodeType node
       return $ Node nodeKind (tok, ty)
 
-  BIN_OP _ lhs _ -> throwE (ErrorToken tok "internal error: deprecated")
-  Assign lhs _ -> throwE (ErrorToken tok "internal error: deprecated")
+  BIN_OP _ lhs _ -> do
+    let ty = nodeType lhs
+    return $ Node nodeKind (tok, ty)
+
+  Assign lhs _ -> do
+    let ty = nodeType lhs
+    return $ Node nodeKind (tok, ty)
 
   VAR key -> do
     obj <- get_var key
