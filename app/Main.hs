@@ -10,8 +10,6 @@ import Error
 import Text.Printf
 import Data.List
 
---import qualified MyLib (someFunc)
-
 
 printProgram :: [String] -> IO ()
 printProgram [] = return ()

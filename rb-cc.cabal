@@ -60,16 +60,6 @@ executable rb-cc
     -- .hs or .lhs file containing the Main module.
     main-is:          Main.hs
 
-    -- Modules included in this executable, other than Main.
-    other-modules:
-        Codegen,
-        Parse,
-        RBCC
-
-
-    -- LANGUAGE extensions used by modules in this package.
-    -- other-extensions:
-
     -- Other library packages from which modules are imported.
     build-depends:
         base ^>=4.17.2.0,
@@ -89,6 +79,10 @@ library rb-cc-lib
     exposed-modules:
         Error,
         Context,
+        Codegen,
+        Parse,
+        RBCC,
+        Type,
         Tokenize
     hs-source-dirs:   src
     build-depends:
