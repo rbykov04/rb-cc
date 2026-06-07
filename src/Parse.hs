@@ -143,6 +143,8 @@ relational = join_bin add
 -- In other words, we need to scale an integer value before adding to a
 -- pointer value. This function takes care of the scaling.
 
+add_untyped_node node tok = do
+  return $ Node node (tok,  make_int)
 
 assign = do
   lhs <- equality
@@ -151,7 +153,7 @@ assign = do
     Punct "=" -> do
       tok <- popHeadToken
       rhs <- assign
-      return $ Node (Assign lhs rhs) (tok, make_int)
+      add_untyped_node (Assign lhs rhs) tok
     _ -> return lhs
 
 expr       = assign
