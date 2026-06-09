@@ -23,6 +23,7 @@ import AST
 import Codegen
 import Tokenize
 import Semantic
+import Scopechecker
 import Error
 import Data.List
 
@@ -299,8 +300,6 @@ declspec = do
     Keyword "char" -> skip (Keyword "char") >> return make_char
     _              -> skip (Keyword "int")  >> return make_int
 
-create_param_lvars :: [(Type,String)] -> ExceptT Error (State ParserState) [Int]
-create_param_lvars = mapM $ (uncurry . flip) new_lvar
 
 
 -- func-params = param ("," param)*

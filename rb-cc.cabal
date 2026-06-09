@@ -85,6 +85,7 @@ library rb-cc-lib
         AST,
         Driver,
         Semantic,
+        Scopechecker,
         Tokenize
     hs-source-dirs:   src
     build-depends:

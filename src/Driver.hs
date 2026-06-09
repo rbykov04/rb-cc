@@ -23,19 +23,21 @@ assembleGlobals globals storage = map restoreFunc globals
       Nothing        -> g
 
 
+pipeline file = do
+  toks                             <- tokenize_ file
+  (globals, toks, storage)         <- (parse . convert_keywords) toks
+  (checkedGlobals, checkedStorage) <- typecheck globals storage
+  return (checkedGlobals, checkedStorage)
 
 debugMode :: String -> Either Error String
 debugMode file = do
-  toks <- tokenize_ file
-  (globals, toks, storage) <- (parse . convert_keywords) toks
-  (checkedGlobals, checkedStorage) <- typecheck globals storage
+  (checkedGlobals, checkedStorage) <- pipeline file
+
   let symTable = assembleGlobals checkedGlobals checkedStorage
   let dump = unpack (pShowNoColor symTable)
   return dump
 
 compile :: String -> Either Error [String]
 compile file = do
-  toks <- tokenize_ file
-  (globals, toks, storage)         <- (parse . convert_keywords) toks
-  (checkedGlobals, checkedStorage) <- typecheck globals storage
+  (checkedGlobals, checkedStorage) <- pipeline file
   codegen checkedGlobals checkedStorage
