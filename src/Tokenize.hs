@@ -2,31 +2,14 @@ module Tokenize where
 import System.IO
 import Data.Char
 import Data.List
+import Error
+import AST
 import Control.Monad.Trans.Except
 import Control.Monad.State
 
 --
 -- Tokenizer
 --
-
-data TokenKind =
-  EOF
-  | Ident String   -- Identifiers
-  | Str String     -- String literals
-  | Punct String   -- Punctuators
-  | Num Int        -- Numeric Literals
-  | Keyword String -- Keywords
-  deriving (Eq, Show)
-
-data Token = Token
-  {
-    tokenKind :: TokenKind,
-    tokenLen :: Int,
-    tokenLoc :: Int
-  }
-  deriving (Eq, Show)
-
-
 
 type TokenState = (String, Int, [Token])
 
@@ -223,10 +206,11 @@ tokenizeM = do
   else
     throwE (num, "invalid token: " ++ show c)
 
+tokenize_ :: String -> Either Error [Token]
 tokenize_ str =
   let (r, (_, _, toks)) = runState (runExceptT tokenizeM) (str, 0, [])
       result = case r of
-        Left e -> Left e
+        Left (loc, text) -> Left $ ErrorLex loc text
         Right _ -> Right toks
   in result
 
@@ -248,9 +232,3 @@ convert_keywords = map toKeyword
         Just _ -> (Token (Keyword name) a b)
     toKeyword tok = tok
 
---                                   begin  end
---                                    |     |
-getLines :: String -> Int -> Int -> [(Int, Int)]
-getLines []     begin cur   = []
-getLines ('\n':ss) begin cur   =  (begin, cur) : getLines ss (cur+1) (cur+1)
-getLines (s:ss)    begin cur   = getLines ss begin (cur+1)

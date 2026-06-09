@@ -9,6 +9,7 @@ import Parse
 import Semantic
 import Error
 import AST
+import Driver
 import Text.Printf
 import Data.List
 import Text.Pretty.Simple
@@ -60,44 +61,10 @@ printTextErr (a : as) = do
   hPutStrLn stderr a
   printTextErr as
 
-bind3args out in3 = let
-    e = (.) out
-    g = (.) e
-    f = (.) g
-    in f in3
-
 printError' :: String -> Error -> IO (Int)
 printError' input err = do
   printTextErr (printError input err)
   exitFailure
-
-errorAt' = bind3args printTextErr errorAt
-
-
-debugPrint :: String -> Error -> Maybe [Obj] -> Maybe [Obj] -> Mode -> IO (Int)
-debugPrint file err globals checkedGlobals mode = do
-  let dump = case mode of
-       Compile -> ""
-       Dump ->  "untyped Tree: \n "
-          ++        addDump globals
-          ++    "\ntyped Tree (before codegen): \n"
-          ++        addDump checkedGlobals
-          ++ "\n"
-
-  printTextErr (printError file err)
---  printf "%s" dump
-  exitFailure
-    where
-      addDump t = case t of
-          Nothing -> "NONE"
-          Just g -> unpack (pShow g)
-
-assembleGlobals :: [Obj] -> IntMap Obj -> [Obj]
-assembleGlobals globals storage = map restoreFunc globals
-  where
-    restoreFunc g = case IntMap.lookup (objKey g) storage of
-      Just actualObj -> actualObj
-      Nothing        -> g
 
 
 main :: IO (Int)
@@ -110,39 +77,24 @@ main = do
       return err
     Right rbArgs -> do
       let path = input_path rbArgs
+      let filename = opt_o rbArgs
       file <- readCFile path
-      let res = tokenize_ file
-      case res of
-        Left (loc, text) -> do
-          errorAt' file loc text
-        Right toks -> do
-          let parse_res = (parse . convert_keywords) toks
-          case parse_res of
-            Left err -> printError' file err
-            Right (globals, toks, storage) ->
-              case typecheck globals storage of
-                Left err -> do
-                      let dump = assembleGlobals globals storage
-                      debugPrint file err (Just dump) Nothing (mode rbArgs)
-                Right (checkedGlobals, checkedStorage) -> do
-                  if mode rbArgs == Compile
-                    then
-                    case codegen checkedGlobals checkedStorage of
-                      Right prog -> do
-                        let filename = opt_o rbArgs
-                        if  filename == ""
-                        then do printProgram prog
-                        else do writeFile filename (intercalate "" prog)
-
-                        return 0
-                      Left e -> do
-                        printError' file e
-                    else do
-                      --dump
-                          let symTable = assembleGlobals checkedGlobals checkedStorage
-                          let dump = unpack (pShowNoColor symTable)
-                          let filename = opt_o rbArgs
-                          if  filename == ""
-                          then do printf "%s\n" dump
-                          else do writeFile filename dump
-                          return 0
+      case mode rbArgs of
+        Compile -> case compile file of
+          Right prog -> do
+            if  filename == ""
+            then do printProgram prog
+            else do writeFile filename (intercalate "" prog)
+            return 0
+          Left e -> do
+            printError' file e
+            return (-1)
+        Dump -> case debugMode file of
+          Right dump -> do
+            if  filename == ""
+            then do printf "%s\n" dump
+            else do writeFile filename dump
+            return 0
+          Left e -> do
+            printError' file e
+            return (-1)

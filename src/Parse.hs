@@ -174,11 +174,6 @@ unary = do
         node <- unary
         add_untyped_node (UNARY op node) tok
 
-
-
-
-
-
 -- funcall == ident "(" (assign ("," assign)*)? ")"
 funcall = do
   ident <- popHeadToken
@@ -435,8 +430,6 @@ compound_stmt  = do
   leaveScope
 
   r <- add_untyped_node (BLOCK nodes) tok
-
-
   return r
 
   where

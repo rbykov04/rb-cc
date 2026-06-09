@@ -9,7 +9,6 @@ import Control.Monad.Trans.Except
 import Control.Monad.State
 import Data.IntMap.Lazy (IntMap, (!))
 import qualified Data.IntMap.Lazy as IntMap
-import Tokenize
 
 --Phases
 data Parsed
@@ -25,6 +24,25 @@ type instance XNodeExt Typed  = (Token, Type)
 
 nodeType :: Node Typed -> Type
 nodeType node = snd (nodeExt node)
+
+data TokenKind =
+  EOF
+  | Ident String   -- Identifiers
+  | Str String     -- String literals
+  | Punct String   -- Punctuators
+  | Num Int        -- Numeric Literals
+  | Keyword String -- Keywords
+  deriving (Eq, Show)
+
+data Token = Token
+  {
+    tokenKind :: TokenKind,
+    tokenLen :: Int,
+    tokenLoc :: Int
+  }
+  deriving (Eq, Show)
+
+
 
 data BinOp =
   Add

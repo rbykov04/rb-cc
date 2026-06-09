@@ -80,10 +80,10 @@ executable rb-cc
 library rb-cc-lib
     exposed-modules:
         Error,
-        Context,
         Codegen,
         Parse,
         AST,
+        Driver,
         Semantic,
         Tokenize
     hs-source-dirs:   src

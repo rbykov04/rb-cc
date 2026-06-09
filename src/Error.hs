@@ -1,6 +1,5 @@
 module Error where
 import Data.List
-import Tokenize
 import AST
 
 import Text.Pretty.Simple
@@ -14,7 +13,16 @@ data Error = ErrorCode Int
            | ErrorType Token String Obj
            | ErrorLoc Int String
            | ErrorToken Token String
+           | ErrorLex Int String
            deriving Show
+
+--                                   begin  end
+--                                    |     |
+getLines :: String -> Int -> Int -> [(Int, Int)]
+getLines []     begin cur   = []
+getLines ('\n':ss) begin cur   =  (begin, cur) : getLines ss (cur+1) (cur+1)
+getLines (s:ss)    begin cur   = getLines ss begin (cur+1)
+
 
 mkTokError tok err = Left $ ErrorToken tok err
 mkTextError err = Left $ ErrorText err
@@ -62,3 +70,4 @@ printError input (ErrorToken t text) =
             ignoreUnknownLine Nothing = (0,(0, 0))
 printError input (ErrorLoc loc text) = errorAt input loc text
 printError input (ErrorText text) = [text]
+printError input (ErrorLex loc text) = errorAt input loc text
