@@ -1,4 +1,8 @@
-{- It is so usefull class to print :D -}
+{-
+It is so usefull class to print :D
+
+
+-}
 
 module Printable where
 

@@ -10,7 +10,6 @@ import Control.Monad.State
 import Data.IntMap.Lazy (IntMap, (!))
 import qualified Data.IntMap.Lazy as IntMap
 import Tokenize
-import Error
 
 --Phases
 data Parsed

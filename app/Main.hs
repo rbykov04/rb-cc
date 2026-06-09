@@ -8,8 +8,14 @@ import Tokenize
 import Parse
 import Semantic
 import Error
+import AST
 import Text.Printf
 import Data.List
+import Text.Pretty.Simple
+import System.Exit (exitFailure)
+import Data.Text.Lazy (unpack)
+import Data.IntMap.Lazy (IntMap, (!))
+import qualified Data.IntMap.Lazy as IntMap
 
 
 printProgram :: [String] -> IO ()
@@ -27,10 +33,12 @@ readCFile path = do
     hPutStrLn stderr ("rb-cc: can't read from" ++ show (path))
     return ("")
 
+data Mode = Compile | Dump deriving (Eq, Show)
 data Args = Args
   {
     opt_o      :: String,
-    input_path :: String
+    input_path :: String,
+    mode       :: Mode
   }
   deriving (Eq, Show)
 
@@ -39,8 +47,10 @@ parseArgs :: [String] -> Either (Int, String) Args
 parseArgs []   = Left (-1, "rb-cc: invalid number of arguments")
 parseArgs (opt : v : _) =
   if opt == "-o"
-  then Right (Args v "-")
-  else Left (-1, "rb-cc: unknown opt" ++ opt)
+  then Right (Args v "-" Compile)
+  else if opt == "-d"
+    then Right (Args v "-"  Dump)
+    else Left (-1, "rb-cc: unknown opt" ++ opt)
 parseArgs args = Left (-1, "rb-cc: unknown opts " ++ show args)
 
 
@@ -59,9 +69,35 @@ bind3args out in3 = let
 printError' :: String -> Error -> IO (Int)
 printError' input err = do
   printTextErr (printError input err)
+  exitFailure
 
 errorAt' = bind3args printTextErr errorAt
 
+
+debugPrint :: String -> Error -> Maybe [Obj] -> Maybe [Obj] -> Mode -> IO (Int)
+debugPrint file err globals checkedGlobals mode = do
+  let dump = case mode of
+       Compile -> ""
+       Dump ->  "untyped Tree: \n "
+          ++        addDump globals
+          ++    "\ntyped Tree (before codegen): \n"
+          ++        addDump checkedGlobals
+          ++ "\n"
+
+  printTextErr (printError file err)
+--  printf "%s" dump
+  exitFailure
+    where
+      addDump t = case t of
+          Nothing -> "NONE"
+          Just g -> unpack (pShow g)
+
+assembleGlobals :: [Obj] -> IntMap Obj -> [Obj]
+assembleGlobals globals storage = map restoreFunc globals
+  where
+    restoreFunc g = case IntMap.lookup (objKey g) storage of
+      Just actualObj -> actualObj
+      Nothing        -> g
 
 
 main :: IO (Int)
@@ -85,15 +121,28 @@ main = do
             Left err -> printError' file err
             Right (globals, toks, storage) ->
               case typecheck globals storage of
-                Left err -> printError' file err
-                Right checkedGlobals -> do
-                  case codegen checkedGlobals storage of
-                    Right prog -> do
-                      let filename = opt_o rbArgs
-                      if  filename == ""
-                      then do printProgram prog
-                      else do writeFile filename (intercalate "" prog)
+                Left err -> do
+                      let dump = assembleGlobals globals storage
+                      debugPrint file err (Just dump) Nothing (mode rbArgs)
+                Right (checkedGlobals, checkedStorage) -> do
+                  if mode rbArgs == Compile
+                    then
+                    case codegen checkedGlobals checkedStorage of
+                      Right prog -> do
+                        let filename = opt_o rbArgs
+                        if  filename == ""
+                        then do printProgram prog
+                        else do writeFile filename (intercalate "" prog)
 
-                      return 0
-                    Left e -> do
-                      printError' file e
+                        return 0
+                      Left e -> do
+                        printError' file e
+                    else do
+                      --dump
+                          let symTable = assembleGlobals checkedGlobals checkedStorage
+                          let dump = unpack (pShowNoColor symTable)
+                          let filename = opt_o rbArgs
+                          if  filename == ""
+                          then do printf "%s\n" dump
+                          else do writeFile filename dump
+                          return 0

@@ -66,6 +66,8 @@ executable rb-cc
         transformers,
         containers,
         rb-cc-lib,
+        text,
+        pretty-simple,
         mtl
 
     -- Directories containing source files.
@@ -89,6 +91,8 @@ library rb-cc-lib
         base,
         transformers,
         split,
+        text,
+        pretty-simple,
         containers,
         mtl
     default-language: GHC2021

@@ -11,6 +11,7 @@ BUILD_SCRIPT=build.sh          # might want to change this too
 function run {
 
   (
+    #make && make single-test
     make && make test
 
     ##&&

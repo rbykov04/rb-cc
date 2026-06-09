@@ -125,7 +125,7 @@ join_bin sub bin_ops = do
 toPunct (str, op) = (Punct str, op)
 
 add_untyped_node node tok = do
-  return $ Node node (tok,  make_int)
+  return $ Node node (tok,  make_untyped)
 
 add_bin op lhs rhs tok = add_untyped_node (BIN_OP op lhs rhs) tok
 
