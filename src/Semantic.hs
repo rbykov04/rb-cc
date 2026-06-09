@@ -372,6 +372,11 @@ checkNode storage (Node nodeKind' (tok, ty)) = case nodeKind' of
       Sub -> checkNodeForSub storage tLhs tRhs tok
       _   -> add_typed_node storage (BIN_OP op tLhs tRhs) tok
 
+  SIZEOF n -> do
+    tNode <- checkNode storage n
+    add_typed_node storage (NUM ((size_of . nodeType) tNode)) tok
+
+
   UNARY op n -> do
     tNode <- checkNode storage n
     add_typed_node storage (UNARY op tNode) tok

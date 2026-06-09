@@ -79,6 +79,7 @@ data Node_ p =
   | VAR (XVar p)
   | Assign (Node p) (Node p)
   | BIN_OP BinOp (Node p) (Node p)
+  | SIZEOF (Node p)
   | UNARY UnOp (Node p)
   | EXPS_STMT (Node p)
   | STMT_EXPR (Node p)

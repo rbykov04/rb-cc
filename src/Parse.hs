@@ -255,7 +255,7 @@ primary = do
             return node
         Keyword "sizeof" -> do
           node <- unary
-          add_type (NUM ((size_of . nodeType) node)) t
+          add_untyped_node (SIZEOF node) t
         _ -> throwE (ErrorToken t "expected an expression")
     [] -> error "not achivable"
 
