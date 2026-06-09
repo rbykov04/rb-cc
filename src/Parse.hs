@@ -187,7 +187,7 @@ funcall = do
       skip (Punct "(")
       args <- get_args
       skip (Punct ")")
-      add_type (FUNCALL name args) ident
+      add_untyped_node (FUNCALL name args) ident
     _ -> throwE (ErrorToken ident "expected an ident")
   where
     get_args = do
@@ -223,11 +223,11 @@ primary = do
 
       case kind of
         Num v -> do
-          add_type (NUM v) t
+          add_untyped_node (NUM v) t
         Str str -> do
           let ty = array_of make_char (length str + 1)
           o <- new_string_literal (str ++ "\0") ty
-          add_type (VAR o) t
+          add_untyped_node (VAR o) t
         Ident str -> do
           next_kind <- seeHeadTokenKind
           case next_kind of
@@ -238,7 +238,7 @@ primary = do
               fv <- find_var str
               case fv of
                 Nothing -> throwE (ErrorToken t "undefined variable")
-                Just var -> add_type (VAR (objKey var)) t
+                Just var -> add_untyped_node (VAR (objKey var)) t
         Punct "(" -> do
           isGnuStatementExpression <- head_equalM (Punct "{")
           if isGnuStatementExpression
@@ -247,7 +247,7 @@ primary = do
             skip (Punct "{")
             body <- compound_stmt
             skip (Punct ")")
-            node <- add_type (STMT_EXPR body) t
+            node <- add_untyped_node (STMT_EXPR body) t
             return node
           else do
             node <- expr
@@ -289,12 +289,12 @@ expr_stmt = do
   if emptyBlock
   then do
     tok <- popHeadToken
-    add_type (BLOCK []) tok
+    add_untyped_node (BLOCK []) tok
   else do
     tok <- seeHeadToken
     node <- expr
     skip (Punct ";")
-    add_type (EXPS_STMT node) tok
+    add_untyped_node (EXPS_STMT node) tok
 
 -- declspec = "int" | "char"
 declspec   :: ExceptT Error (State ParserState) Type
@@ -397,7 +397,7 @@ declaration = do
   basety <- declspec
   nodes <- iter basety []
   skip (Punct ";")
-  add_type (BLOCK nodes) tok
+  add_untyped_node (BLOCK nodes) tok
   where
     decl_expr basety nodes = do
       (ty, name) <- declarator basety
@@ -406,10 +406,10 @@ declaration = do
       if isAssign
       then do
         tok <- popHeadToken
-        lhs <- add_type (VAR key) tok
+        lhs <- add_untyped_node (VAR key) tok
         rhs <- assign
         node <- add_untyped_node (Assign lhs rhs) tok
-        expression  <- add_type (EXPS_STMT node) tok
+        expression  <- add_untyped_node (EXPS_STMT node) tok
         return $ nodes ++ [expression]
       else return nodes
 
@@ -434,7 +434,7 @@ compound_stmt  = do
   nodes <- iter []
   leaveScope
 
-  r <- add_type (BLOCK nodes) tok
+  r <- add_untyped_node (BLOCK nodes) tok
 
 
   return r
@@ -478,7 +478,7 @@ stmt  = do
     tok <- popHeadToken
     node <-expr
     skip (Punct ";")
-    add_type (RETURN node) tok
+    add_untyped_node (RETURN node) tok
   else if head_equal ts (Keyword "while")
   then do
     tok <- popHeadToken
@@ -486,7 +486,7 @@ stmt  = do
     cond <- expr
     skip (Punct ")")
     body <- stmt
-    add_type (FOR Nothing (Just cond) Nothing body) tok
+    add_untyped_node (FOR Nothing (Just cond) Nothing body) tok
   else if head_equal ts (Keyword "for")
   then do
     tok <- popHeadToken
@@ -500,7 +500,7 @@ stmt  = do
     skip (Punct ")")
 
     body <- stmt
-    add_type (FOR (Just ini) cond inc body) tok
+    add_untyped_node (FOR (Just ini) cond inc body) tok
   else if head_equal ts (Keyword "if")
   then do
     tok <- popHeadToken
@@ -514,8 +514,8 @@ stmt  = do
     then do
       _ <- popHeadToken
       _else <- stmt
-      add_type (IF cond _then (Just _else)) tok
-    else add_type (IF cond _then Nothing) tok
+      add_untyped_node (IF cond _then (Just _else)) tok
+    else add_untyped_node (IF cond _then Nothing) tok
   else if head_equal ts (Punct "{")
   then do
     _ <- popHeadToken

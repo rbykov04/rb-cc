@@ -138,7 +138,6 @@ add_typed_node storage nodeKind tok = case nodeKind of
       return $ Node nodeKind (tok, base)
     _ -> return $ Node nodeKind (tok, nodeType node)
 
-
   Assign lhs _ ->
     let tyL = nodeType lhs
     in Right (Node nodeKind (tok, tyL))
@@ -155,93 +154,9 @@ add_typed_node storage nodeKind tok = case nodeKind of
 
     in Right (Node nodeKind (tok, tyL))
 
-
+  SIZEOF _ -> Left $ ErrorToken tok "Compiler Bug: SIZEOF node must be transformed into NUM in checkNode before reaching add_typed_node!"
   _ ->  Right (Node nodeKind (tok, make_int))
-  --FIXME:_ ->  Left $ ErrorToken tok "not implemented yet"
 
-
-add_type nodeKind tok = case nodeKind of
-  UNARY op node -> case op of
-    Addr -> case (typeKind. nodeType) node of
-      ARRAY base _ -> do
-        let ty = pointer_to base
-        return $ Node nodeKind (tok, ty)
-      _              -> do
-        let ty = (pointer_to . nodeType) node
-        return $ Node nodeKind (tok, ty)
-
-    Deref -> case (typeKind. nodeType) node of
-      ARRAY base _ -> do
-        return $ Node nodeKind (tok, base)
-      PTR base -> do
-        return $ Node nodeKind (tok, base)
-      _ -> throwE (ErrorToken tok "add type: invalid pointer dereference")
-
-
-    _    -> do
-      let ty = nodeType node
-      return $ Node nodeKind (tok, ty)
-
-  BIN_OP _ lhs _ -> throwE (ErrorToken tok "bin op - REMOVED")
-
-  Assign lhs _ -> throwE (ErrorToken tok "assign op - REMOVED")
-
-
-  VAR key -> do
-    obj <- get_var key
-    return $ Node nodeKind (tok , (objType obj))
-
-  STMT_EXPR body -> do
-    case body of
-      Node (BLOCK blocks) _ -> do
-        case (last' blocks) of
-          Node (EXPS_STMT x) (tt, _) -> do
-            let ty = nodeType x
-            --throwE (ErrorToken tok ("types: " ++ show x))
-            return $ Node nodeKind (tt , ty)
-      _ -> throwE (ErrorToken tok "statement expression returning void is not supported")
-
-  _ -> return $ Node nodeKind (tok, make_int)
-
-
-
-
-make_offset ty count tok = do
-  base <- add_type (NUM ((typeSize) ty)) tok
-  add_type (BIN_OP Mul count base) tok
-
-ptr_math op ptr ty count token = do
-  offset <- make_offset ty count token
-  add_type (BIN_OP op ptr offset) token
-
-{-
-new_add  :: Node Typed ->Node Typed ->Token -> ExceptT Error (State ParserState) (Node Typed)
-new_add lhs rhs tok
-  | is_integer (nodeType rhs) && is_integer (nodeType lhs) = add_type (BIN_OP Add lhs rhs) tok
-  | otherwise =  case ((get_ptr_base . nodeType) lhs, (get_ptr_base . nodeType) rhs) of
-
-  ((Just tyBase), Nothing)  -> ptr_math Add lhs tyBase rhs tok
-  (Nothing, (Just tyBase))  -> ptr_math Add rhs tyBase lhs tok
-
-  -- ptr +  ptr
-  _ ->  throwE (ErrorToken tok "invalid operands")
-
-new_sub  :: Node Typed ->Node Typed ->Token -> ExceptT Error (State ParserState) (Node Typed)
-new_sub lhs rhs tok
-  | is_integer (nodeType rhs) && is_integer (nodeType lhs) = add_type (BIN_OP Sub lhs rhs) tok
-  | otherwise =  case ((get_ptr_base . nodeType) lhs, (get_ptr_base . nodeType) rhs) of
-    ((Just tyBase), Nothing)  -> ptr_math Sub lhs tyBase rhs tok
-
-  -- ptr - ptr, which returns how many elements are between the two.
-    ((Just tyBase), (Just _)) -> ptr_diff lhs tyBase rhs tok
-  -- num - ptr
-    _ -> throwE (ErrorToken tok "invalid operands")
-    where
-      ptr_diff a atype b token = do
-        base <- add_type (NUM (typeSize atype)) token
-        num <- add_type (BIN_OP Sub a b) tok
-        add_type (BIN_OP Div (change_type make_int num) base) tok
--}
 
 find_var_in :: String -> [Scope] -> ExceptT Error (State ParserState) (Maybe Obj)
 find_var_in _ [] = do
