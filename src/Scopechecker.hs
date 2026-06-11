@@ -159,3 +159,30 @@ new_string_literal text ty= do
 
 create_param_lvars :: [(Type,String)] -> ExceptT Error (State ParserState) [Int]
 create_param_lvars = mapM $ (uncurry . flip) new_lvar
+
+
+checkNode :: IntMap Obj -> Node Typed -> Either Error (Node Typed)
+checkNode storage node@(Node nodeKind' (tok, ty)) = return node
+
+checkObj storage (key, obj) = do
+  let res = mapM (checkNode storage) (objBody obj)
+  case res of
+    Left e -> case e of
+      ErrorToken tok text -> Left $ ErrorType tok text obj
+      _                   -> Left e
+    Right checkedBody -> return (key, obj { objBody = checkedBody })
+
+
+
+scopecheck :: [Obj] -> IntMap Obj -> Either Error ([Obj], IntMap Obj)
+scopecheck globals storage = do
+  let objs = IntMap.toList storage
+
+  checkedPairs <- mapM (checkObj storage) objs
+
+  let updatedStorage = IntMap.fromList checkedPairs
+  let updatedGlobals = map (\g -> case IntMap.lookup (objKey g) updatedStorage of
+                                    Just realObj -> realObj
+                                    Nothing      -> g
+                           ) globals
+  return (updatedGlobals , updatedStorage)

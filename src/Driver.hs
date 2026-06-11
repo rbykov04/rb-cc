@@ -7,6 +7,8 @@ import Parse
 import Semantic
 import Error
 import AST
+import Semantic (typecheck)
+import Scopechecker (scopecheck)
 import Text.Printf
 import Data.List
 import Text.Pretty.Simple
@@ -26,6 +28,7 @@ assembleGlobals globals storage = map restoreFunc globals
 pipeline file = do
   toks                             <- tokenize_ file
   (globals, toks, storage)         <- (parse . convert_keywords) toks
+  (checkedGlobals, checkedStorage) <- scopecheck globals storage
   (checkedGlobals, checkedStorage) <- typecheck globals storage
   return (checkedGlobals, checkedStorage)
 
