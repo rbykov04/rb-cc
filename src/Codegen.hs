@@ -94,7 +94,7 @@ pop text = convertEx $ pop_ text
 
 
 -- Load a value from where %rax is pointing to.
-load :: Type -> ExceptT CodegenError (State CodegenState) ()
+load :: Type Typed -> ExceptT CodegenError (State CodegenState) ()
 load ty = case typeKind ty of
     -- If it is an array, do not attempt to load a value to the
     -- register because in general we can't load an entire array to a
@@ -107,7 +107,7 @@ load ty = case typeKind ty of
       genLine "  mov (%rax), %rax\n"
 
 -- Store %rax to an address that the stack top is pointing to.
-store :: Type -> ExceptT CodegenError (State CodegenState) ()
+store :: Type Typed -> ExceptT CodegenError (State CodegenState) ()
 store ty = do
     pop "%rdi"
     if typeSize ty == 1 then
@@ -286,7 +286,7 @@ assign_lvar_offset :: Int -> ExceptT CodegenError (State CodegenState) ()
 assign_lvar_offset key = do
     func <-getVar key
     case (typeKind . objType) func of
-      FUNC ret args params _ -> do
+      FUNC ret (args , params , _) -> do
         let vars = objLocals func
         vars' <-  mapM getVar vars
         let sizes    = map (typeSize . objType) vars'
@@ -295,7 +295,7 @@ assign_lvar_offset key = do
         let offset'' = if length vars == 0
                       then 0
                       else ((align_to 16) . last) offsets
-        updateVar (change_ftype (Type (FUNC ret args params offset'') 8)) key
+        updateVar (change_ftype (Type (FUNC ret (args , params , offset'')) 8)) key
       _ -> pure()
 
 
@@ -314,7 +314,7 @@ emit_data prog = do
     let name = objName o
     let size = (typeSize . objType) o
     case (typeKind . objType) o of
-      FUNC _ _ _ _ -> pure ()
+      FUNC _ _ -> pure ()
       _  -> do
         genLineLn $ "  .data"
         genLineLn $ "  .globl " ++ name
@@ -334,7 +334,7 @@ emit_text :: Int -> ExceptT CodegenError (State CodegenState) ()
 emit_text o = do
     f <- getVar o
     case (typeKind . objType) f of
-      FUNC _ args _ stack_size -> do
+      FUNC _ (args ,  _ , stack_size) -> do
         let body = objBody f
         let name = objName f
 

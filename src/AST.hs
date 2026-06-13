@@ -20,9 +20,9 @@ type instance XVar Typed  = Int
 
 type family XNodeExt p
 type instance XNodeExt Parsed = Token
-type instance XNodeExt Typed  = (Token, Type)
+type instance XNodeExt Typed  = (Token, Type Typed)
 
-nodeType :: Node Typed -> Type
+nodeType :: Node Typed -> Type Typed
 nodeType node = snd (nodeExt node)
 
 data TokenKind =
@@ -61,17 +61,21 @@ data UnOp =
   | Deref    -- unary *
    deriving (Show, Eq)
 
---
-data TypeKind
+
+
+type family XFuncExt p
+type instance XFuncExt Parsed = [(Type Parsed, String)]
+type instance XFuncExt Typed  = ([Int] , [Int], Int)
+
+data TypeKind p
   = INT
   | CHAR
-  | PTR Type
+  | PTR (Type p)
   -- arr  base len
-  | ARRAY Type Int
+  | ARRAY (Type p) Int
 --       typy args locals
-  | FUNC Type [Int] [Int] Int
+  | FUNC (Type p) (XFuncExt p)
   --  FUNC Type [(Type, String)]
-  deriving (Show, Eq)
 
 -- Pointer
 
@@ -84,18 +88,16 @@ data TypeKind
 -- naturally handled as if it were "pointer to T", as required by
 -- the C spec.
 
-data Type = Type
+data Type p = Type
   {
-    typeKind :: TypeKind,
-    typeSize :: Int -- sizeof() value
-
+    typeKind :: TypeKind p,
+    typeSize :: Int -- sizeof() value --FIXME: for PARSED it is useless
   }
-  deriving (Show, Eq)
 
 
 data ParserOnlyNodes
-  = DECL_VAR String Type
-  | FUNCTION String Type (Node Parsed)
+  = DECL_VAR String (Type Parsed)
+  | FUNCTION String (Type Parsed) (Node Parsed)
   | STR_VALUE String
 
 type family XP p
@@ -137,7 +139,7 @@ data Obj = Obj
   {
     objKey        :: Int,
     objName       :: String, -- variable name
-    objType       :: Type  , -- type
+    objType       :: Type Typed , -- type
     objOffset     :: Int   , -- offset from RBP
     objIsLocal    :: Bool  , -- local or global/function
     objBody       :: [Node Typed],
@@ -145,11 +147,22 @@ data Obj = Obj
     objInitData   :: Maybe String -- global_variable
   }
 
+deriving instance (Show (XFuncExt p), Show (Type p)) => Show (TypeKind p)
+deriving instance (Eq (XFuncExt p), Eq (Type p)) => Eq (TypeKind p)
+
+deriving instance Show (TypeKind p) => Show (Type p)
+deriving instance Eq (TypeKind p) => Eq (Type p)
+
+
 deriving instance (Eq (XVar p), Eq (XP p), Eq (XP p), Eq (XNodeExt p)) => Eq (Node_ p)
 deriving instance (Show (XVar p), Show (XP p), Show (XP p), Show (XNodeExt p)) => Show (Node_ p)
 
 deriving instance (Eq (XVar p), Eq (XP p), Eq (XP p), Eq (XNodeExt p)) => Eq (Node p)
 deriving instance (Show (XVar p), Show (XP p), Show (XP p), Show (XNodeExt p)) => Show (Node p)
+
+deriving instance Show ParserOnlyNodes
+deriving instance Eq ParserOnlyNodes
+
 
 deriving instance Eq Obj
 deriving instance Show Obj
@@ -165,14 +178,4 @@ data Scope = Scope
   {
     scopeVars :: [VarScope]
   } deriving (Show)
-
---tmp
-data ParserState = ParserState
-  { tokens      :: [Token]
-  , currentVars :: ([Obj], [Obj])
-  , allObjects  :: IntMap Obj
-  , uniqCounter :: Int
-  , scopes      :: [Scope]
-  } deriving (Show)
-
 

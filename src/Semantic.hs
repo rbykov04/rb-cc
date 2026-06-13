@@ -15,19 +15,19 @@ import qualified Data.IntMap.Lazy as IntMap
 
 size_of (Type _ size) = size
 array_of base len = Type (ARRAY base len) (size_of base * len)
-func_type ret_type args = Type (FUNC ret_type args [] (-99)) 8
+func_type ret_type args = Type (FUNC ret_type (args , [] , (-99))) 8
 pointer_to base = Type (PTR base) 8
 make_int  = Type INT 8
 make_untyped  = Type INT (-99)
 make_char = Type CHAR 1
 
-is_integer :: Type -> Bool
+is_integer :: Type Typed -> Bool
 is_integer t = case typeKind t of
   CHAR -> True
   INT -> True
   _   -> False
 
-get_ptr_base :: Type -> Maybe Type
+get_ptr_base :: Type Typed -> Maybe (Type Typed)
 get_ptr_base t = case typeKind t of
   PTR   base -> Just base
   ARRAY base _ -> Just base
@@ -39,11 +39,6 @@ last' ys = foldl1 (\_ -> \x -> x) ys
 
 
 change_type new (Node kind (tok, _)) = Node kind (tok, new)
-
-decayType :: Type -> Type
-decayType ty = case typeKind ty of
-  ARRAY base _ -> pointer_to base
-  _            -> ty
 
 get_base_for_deref _ (ARRAY base _) = return base
 get_base_for_deref _ (PTR base)   = return base

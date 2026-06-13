@@ -33,6 +33,12 @@ import Control.Monad.State
 import Data.IntMap.Lazy (IntMap, (!))
 import qualified Data.IntMap.Lazy as IntMap
 
+data ParserState = ParserState
+  { tokens      :: [Token]
+  } deriving (Show)
+
+
+
 head_equal :: [Token] -> TokenKind -> Bool
 head_equal ((Token (Punct a) _ _) : _) (Punct b) = a == b
 head_equal ((Token (Ident a) _ _) : _) (Ident b) = a == b
@@ -301,23 +307,23 @@ expr_stmt = do
     add_untyped_node (EXPS_STMT node) tok
 
 -- declspec = "int" | "char"
-declspec   :: ExceptT Error (State ParserState) Type
+declspec   :: ExceptT Error (State ParserState) (Type Parsed)
 declspec = do
   kind <- seeHeadTokenKind
   case kind of
-    Keyword "char" -> skip (Keyword "char") >> return make_char
-    _              -> skip (Keyword "int")  >> return make_int
+    Keyword "char" -> skip (Keyword "char") >> return (makeType CHAR)
+    _              -> skip (Keyword "int")  >> return (makeType INT)
 
 
 
+func_type_ex ret_type args = Type (FUNC ret_type args) (-100)
 -- func-params = param ("," param)*
 -- param       = declspec declarator
-func_params :: Type -> ExceptT Error (State ParserState) Type
+func_params :: Type Parsed -> ExceptT Error (State ParserState) (Type Parsed)
 func_params base = do
   args <- iter []
   skip (Punct ")")
-  args' <- create_param_lvars args
-  return $ func_type base args'
+  return $ func_type_ex base args
   where
     iter params = do
       isEnd <- head_equalM (Punct ")")
@@ -343,7 +349,7 @@ getNumber = do
 -- type-suffix = (" func-params
 --             | "[" num "]" type-suffix
 --             | etc
-type_suffix :: Type -> ExceptT Error (State ParserState) Type
+type_suffix :: Type Parsed -> ExceptT Error (State ParserState) (Type Parsed)
 type_suffix base = do
   kind <- seeHeadTokenKind
   case kind of
@@ -355,7 +361,7 @@ type_suffix base = do
       len <- getNumber
       skip (Punct "]")
       node <- type_suffix base
-      return $ array_of node len
+      return $ makeType (ARRAY node len)
     _ -> return base
 
 -- postfix = primary ("[" expr "]")
@@ -377,7 +383,7 @@ postfix = do
         _ -> return node
 
 -- declarator = "*"* ident type-suffix
-declarator :: Type -> ExceptT Error (State ParserState) (Type, String)
+declarator :: Type Parsed -> ExceptT Error (State ParserState) (Type Parsed, String)
 declarator basetype = do
   ty <- ptr_wrap basetype
   tok <- popHeadToken
@@ -390,7 +396,7 @@ declarator basetype = do
     ptr_wrap base = do
       isPtr <- consume (Punct "*")
       if isPtr
-      then ptr_wrap $ pointer_to base
+      then ptr_wrap $ makeType (PTR base)
       else return base
 
 -- declaration = declspec (declarator ("=" expr)? ("," declarator ("=" expr)?)*)? ";"
@@ -433,9 +439,9 @@ is_type = do
     _                -> return False
 compound_stmt  = do
   tok <- seeHeadToken
-  enterScope
+  -- FIXME --enterScope
   nodes <- iter []
-  leaveScope
+  -- FIXME leaveScope
 
   r <- add_untyped_node (BLOCK nodes) tok
   return r
@@ -527,12 +533,11 @@ stmt  = do
 function :: ExceptT Error (State ParserState) (Node Parsed)
 function = do
   tok <- seeHeadToken
-  putLocals []
   ty <- declspec
   (ftype, name) <- declarator ty
   skip (Punct "{")
 
-  enterScope
+  -- FIXME enterScope
 
   body <- compound_stmt
 
@@ -541,7 +546,7 @@ function = do
   --key <- new_gvar name ftype
   --update_var (updateFunc (map objKey locals) nodes) key
 
-  leaveScope
+  -- FIXME leaveScope
 
   --add_node (EXT (FUNCTION name t)) tok
   return $ add_node (EXT (FUNCTION name ftype body)) tok
@@ -551,6 +556,8 @@ FIXME
     updateFunc locals nodes obj = obj {objLocals = locals, objBody = nodes};
 -}
 
+makeType kind = Type kind (-100)
+
 isFunction :: ExceptT Error (State ParserState) Bool
 isFunction = do
   tok <- seeHeadTokenKind
@@ -558,16 +565,15 @@ isFunction = do
     Punct ";" -> return False
     _ -> do
       _ <- popHeadToken
-      (ftype, _) <- declarator make_int
+      (ftype, _) <- declarator (makeType INT)
       case typeKind ftype of
-        FUNC _ _ _ _ -> return True
+        FUNC _ _ -> return True
         _            -> return False
 
 
 -- program = function-definition*
 program :: ExceptT Error (State ParserState) [Node Parsed]
 program = do
-  enterScope
   isEnd <- head_equalM EOF
   if isEnd
   then return []
@@ -597,8 +603,6 @@ global_variable = do
 
       tokVar <- seeHeadToken
       (t, name) <- declarator base
-      --FIXME
-      -- _ <- new_gvar name t
 
       let currentVar = add_node (EXT (DECL_VAR name t)) tokVar
       tok <- seeHeadTokenKind
@@ -616,15 +620,6 @@ parse :: [Token] -> Either Error ([Node Parsed])
 parse toks = do
   let initState = ParserState
         { tokens      = toks
-        , currentVars = ([], [])
-        , allObjects  = IntMap.empty
-        , uniqCounter = 0
-        , scopes      = []
         }
-  let (r, newState) = runState (runExceptT program) initState
-  let toks = tokens newState
-  let globals = (snd . currentVars)  newState
-  let storage = allObjects newState
-  case r of
-    Left e -> Left e
-    Right _ -> return ([])
+  let (result, newState) = runState (runExceptT program) initState
+  result

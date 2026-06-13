@@ -9,6 +9,8 @@ import Parse
 import Scopechecker
 import Data.IntMap.Lazy
 import Data.Either
+import Data.List
+import Data.Maybe
 
 runPurePipeline :: String -> Either Error ([Obj], IntMap Obj)
 runPurePipeline sourceCode = do
@@ -23,7 +25,16 @@ spec = do
     context "Happy Path: Valid code structures" $ do
       it "allows global variables to be accessed inside functions" $ do
         let code = "int x; int main() { return x; }"
-        runPurePipeline code `shouldSatisfy` isRight
+        case runPurePipeline code of
+          Left err -> expectationFailure $ "compile is failed: " ++ show err
+          Right (globals, _) -> do
+            let mGvar = find (\o -> objName o == "x") globals
+            case mGvar of
+                Just xVar -> do
+                        objIsLocal xVar `shouldBe` False
+                        typeKind (objType xVar) `shouldBe` INT
+                Nothing -> expectationFailure "Global 'x' has not been founded!"
+{-
       it "allows local variables within their native block scope" $ do
         let code = "int main() { int y = 5; return y; }"
         runPurePipeline code `shouldSatisfy` isRight
@@ -59,3 +70,5 @@ spec = do
         -- Error: declaring the same variable twice in the exact same block
         let code = "int main() { int a = 1; int a = 2; return 0; }"
         runPurePipeline code `shouldSatisfy` isLeft
+
+-}

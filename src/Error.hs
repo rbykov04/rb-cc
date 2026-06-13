@@ -14,6 +14,7 @@ data Error = ErrorCode Int
            | ErrorLoc Int String
            | ErrorToken Token String
            | ErrorLex Int String
+           | ErrorScope (Node Parsed) String
            deriving Show
 
 --                                   begin  end
