@@ -92,6 +92,16 @@ data Type = Type
   }
   deriving (Show, Eq)
 
+
+data ParserOnlyNodes
+  = DECL_VAR String Type
+  | FUNCTION String Type (Node Parsed)
+  | STR_VALUE String
+
+type family XP p
+type instance XP Parsed = ParserOnlyNodes
+type instance XP Typed = ()
+
 data Node_ p =
   NUM Int
   | VAR (XVar p)
@@ -113,6 +123,7 @@ data Node_ p =
 -- "for" or "while" statement
 --  FOR init          cond        inc          body
   | FOR (Maybe (Node p)) (Maybe (Node p)) (Maybe (Node p)) (Node p)
+  | EXT (XP p)
 
 data Node p = Node
   {
@@ -120,11 +131,6 @@ data Node p = Node
     nodeExt  :: XNodeExt p
   }
 
-deriving instance (Show (XVar p), Show (XNodeExt p)) => Show (Node_ p)
-deriving instance (Eq (XVar p),   Eq (XNodeExt p))   => Eq (Node_ p)
-
-deriving instance (Show (XVar p), Show (XNodeExt p)) => Show (Node p)
-deriving instance (Eq (XVar p),   Eq (XNodeExt p))   => Eq (Node p)
 
 
 data Obj = Obj
@@ -138,21 +144,27 @@ data Obj = Obj
     objLocals     :: [Int],
     objInitData   :: Maybe String -- global_variable
   }
-  deriving (Show, Eq)
+
+deriving instance (Eq (XVar p), Eq (XP p), Eq (XP p), Eq (XNodeExt p)) => Eq (Node_ p)
+deriving instance (Show (XVar p), Show (XP p), Show (XP p), Show (XNodeExt p)) => Show (Node_ p)
+
+deriving instance (Eq (XVar p), Eq (XP p), Eq (XP p), Eq (XNodeExt p)) => Eq (Node p)
+deriving instance (Show (XVar p), Show (XP p), Show (XP p), Show (XNodeExt p)) => Show (Node p)
+
+deriving instance Eq Obj
+deriving instance Show Obj
 
 
 data VarScope = VarScope
   {
     scopeName :: String,
     scopeObj  :: Obj
-  }
-  deriving (Show, Eq)
+  } deriving (Show)
 
 data Scope = Scope
   {
     scopeVars :: [VarScope]
-  }
-  deriving (Show, Eq)
+  } deriving (Show)
 
 --tmp
 data ParserState = ParserState
@@ -162,3 +174,5 @@ data ParserState = ParserState
   , uniqCounter :: Int
   , scopes      :: [Scope]
   } deriving (Show)
+
+

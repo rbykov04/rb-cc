@@ -25,12 +25,16 @@ assembleGlobals globals storage = map restoreFunc globals
       Nothing        -> g
 
 
-pipeline file = do
+pipeline :: String -> Either Error ([Obj], IntMap Obj)
+pipeline file = error "?"
+ {-
+FIXME
   toks                             <- tokenize_ file
   (globals, toks, storage)         <- (parse . convert_keywords) toks
   (checkedGlobals, checkedStorage) <- scopecheck globals storage
   (checkedGlobals, checkedStorage) <- typecheck globals storage
   return (checkedGlobals, checkedStorage)
+-}
 
 debugMode :: String -> Either Error String
 debugMode file = do

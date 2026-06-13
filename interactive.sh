@@ -12,7 +12,8 @@ function run {
 
   (
     #make && make single-test
-    make && make test
+    #make && make test && cabal test
+    cabal test
 
     ##&&
    ## cat 0-current.c | cabal run language-server -- -o t.s -

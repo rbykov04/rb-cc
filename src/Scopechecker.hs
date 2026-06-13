@@ -10,6 +10,14 @@ import Data.List
 import Data.IntMap.Lazy (IntMap, (!))
 import qualified Data.IntMap.Lazy as IntMap
 
+data ScopeCheckerState = ScopeCheckerState
+  { currentVars_ :: ([Obj], [Obj])
+  , allObjects_  :: IntMap Obj
+  , uniqCounter_ :: Int
+  , scopes_      :: [Scope]
+  } deriving (Show)
+
+
 getVars :: ExceptT Error (State ParserState) (IntMap Obj)
 getVars = do
   r <- get
@@ -161,28 +169,23 @@ create_param_lvars :: [(Type,String)] -> ExceptT Error (State ParserState) [Int]
 create_param_lvars = mapM $ (uncurry . flip) new_lvar
 
 
-checkNode :: IntMap Obj -> Node Typed -> Either Error (Node Typed)
-checkNode storage node@(Node nodeKind' (tok, ty)) = return node
+checkNode :: Node Parsed -> ExceptT Error (State ScopeCheckerState) ()
+checkNode  = error "?"
 
-checkObj storage (key, obj) = do
-  let res = mapM (checkNode storage) (objBody obj)
-  case res of
-    Left e -> case e of
-      ErrorToken tok text -> Left $ ErrorType tok text obj
-      _                   -> Left e
-    Right checkedBody -> return (key, obj { objBody = checkedBody })
+scopechecker_ :: [Node Parsed] -> ExceptT Error (State ScopeCheckerState) ()
+scopechecker_  nodes = mapM_ checkNode nodes
 
-
-
-scopecheck :: [Obj] -> IntMap Obj -> Either Error ([Obj], IntMap Obj)
-scopecheck globals storage = do
-  let objs = IntMap.toList storage
-
-  checkedPairs <- mapM (checkObj storage) objs
-
-  let updatedStorage = IntMap.fromList checkedPairs
-  let updatedGlobals = map (\g -> case IntMap.lookup (objKey g) updatedStorage of
-                                    Just realObj -> realObj
-                                    Nothing      -> g
-                           ) globals
-  return (updatedGlobals , updatedStorage)
+scopecheck :: [Node Parsed] -> Either Error ([Obj], IntMap Obj)
+scopecheck ast = do
+  let initState = ScopeCheckerState
+        { currentVars_ = ([], [])
+        , allObjects_  = IntMap.empty
+        , uniqCounter_ = 0
+        , scopes_      = []
+        }
+  let (r, newState) = runState (runExceptT (scopechecker_ ast)) initState
+  let globals = (snd . currentVars_)  newState
+  let storage = allObjects_ newState
+  case r of
+    Left e -> Left e
+    Right _ -> return (globals, storage)

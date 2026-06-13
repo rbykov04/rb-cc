@@ -33,7 +33,6 @@ import Control.Monad.State
 import Data.IntMap.Lazy (IntMap, (!))
 import qualified Data.IntMap.Lazy as IntMap
 
-
 head_equal :: [Token] -> TokenKind -> Bool
 head_equal ((Token (Punct a) _ _) : _) (Punct b) = a == b
 head_equal ((Token (Ident a) _ _) : _) (Ident b) = a == b
@@ -76,7 +75,7 @@ seeHeadTokenKind = do
 
 
 
-type Parser = ExceptT Error (State ParserState) (Node Typed)
+type Parser = ExceptT Error (State ParserState) (Node Parsed)
 stmt          :: Parser
 expr_stmt     :: Parser
 primary       :: Parser
@@ -104,9 +103,9 @@ putTokens toks = do
   put r {tokens = toks}
 
 join_bin ::
-   ExceptT Error (State ParserState) (Node Typed)
-   -> [(String, Node Typed ->Node Typed->Token -> ExceptT Error (State ParserState) (Node Typed))]
-   -> ExceptT Error (State ParserState) (Node Typed)
+   ExceptT Error (State ParserState) (Node Parsed)
+   -> [(String, Node Parsed ->Node Parsed -> Token -> ExceptT Error (State ParserState) (Node Parsed))]
+   -> ExceptT Error (State ParserState) (Node Parsed)
 
 join_bin sub bin_ops = do
   node <- sub
@@ -125,8 +124,10 @@ join_bin sub bin_ops = do
 
 toPunct (str, op) = (Punct str, op)
 
-add_untyped_node node tok = do
-  return $ Node node (tok,  make_untyped)
+add_untyped_node node tok = return $ add_node node tok
+
+add_node :: Node_ Parsed -> Token -> Node Parsed
+add_node node tok = Node node tok
 
 add_bin op lhs rhs tok = add_untyped_node (BIN_OP op lhs rhs) tok
 
@@ -221,9 +222,12 @@ primary = do
         Num v -> do
           add_untyped_node (NUM v) t
         Str str -> do
-          let ty = array_of make_char (length str + 1)
-          o <- new_string_literal (str ++ "\0") ty
-          add_untyped_node (VAR o) t
+          -- FIXME
+          --let ty = array_of make_char (length str + 1)
+          --o <- new_string_literal (str ++ "\0") ty
+          add_untyped_node (EXT (STR_VALUE str)) t
+          --add_untyped_node (VAR o) t
+          --FIXME
         Ident str -> do
           next_kind <- seeHeadTokenKind
           case next_kind of
@@ -231,10 +235,14 @@ primary = do
               putTokens (t:ts)
               funcall
             _ -> do
+              add_untyped_node (VAR str) t
+              -- FIXME
+              {-
               fv <- find_var str
               case fv of
                 Nothing -> throwE (ErrorToken t "undefined variable")
-                Just var -> add_untyped_node (VAR (objKey var)) t
+                 Just var -> add_untyped_node (VAR (objKey var)) t
+              -}
         Punct "(" -> do
           isGnuStatementExpression <- head_equalM (Punct "{")
           if isGnuStatementExpression
@@ -252,7 +260,7 @@ primary = do
         Keyword "sizeof" -> do
           node <- unary
           add_untyped_node (SIZEOF node) t
-        _ -> throwE (ErrorToken t "expected an expression")
+        _ -> throwE (ErrorToken t ("expected an expression, but " ++ show kind))
     [] -> error "not achivable"
 
 consume :: TokenKind -> ExceptT Error (State ParserState) Bool
@@ -395,12 +403,13 @@ declaration = do
   where
     decl_expr basety nodes = do
       (ty, name) <- declarator basety
-      key <- new_lvar name ty
+      -- FIXME
+      -- key <- new_lvar name ty
       isAssign <- head_equalM (Punct "=")
       if isAssign
       then do
         tok <- popHeadToken
-        lhs <- add_untyped_node (VAR key) tok
+        lhs <- add_untyped_node (EXT (DECL_VAR name ty)) tok
         rhs <- assign
         node <- add_untyped_node (Assign lhs rhs) tok
         expression  <- add_untyped_node (EXPS_STMT node) tok
@@ -448,7 +457,7 @@ compound_stmt  = do
           node <- stmt
           iter (nodes ++ [node])
 
-maybe_expr :: TokenKind -> ExceptT Error (State ParserState) (Maybe (Node Typed))
+maybe_expr :: TokenKind -> ExceptT Error (State ParserState) (Maybe (Node Parsed))
 maybe_expr tk = do
   isNotExpr <- head_equalM tk
   if isNotExpr
@@ -515,8 +524,9 @@ stmt  = do
   else expr_stmt
 
 
-function :: ExceptT Error (State ParserState) ()
+function :: ExceptT Error (State ParserState) (Node Parsed)
 function = do
+  tok <- seeHeadToken
   putLocals []
   ty <- declspec
   (ftype, name) <- declarator ty
@@ -524,16 +534,22 @@ function = do
 
   enterScope
 
-  s <- compound_stmt
-  let nodes = [s]
+  body <- compound_stmt
 
-  locals <- getLocals
-  key <- new_gvar name ftype
-  update_var (updateFunc (map objKey locals) nodes) key
+  -- FIXME
+  -- locals <- getLocals
+  --key <- new_gvar name ftype
+  --update_var (updateFunc (map objKey locals) nodes) key
 
   leaveScope
+
+  --add_node (EXT (FUNCTION name t)) tok
+  return $ add_node (EXT (FUNCTION name ftype body)) tok
+  {-
+FIXME
   where
     updateFunc locals nodes obj = obj {objLocals = locals, objBody = nodes};
+-}
 
 isFunction :: ExceptT Error (State ParserState) Bool
 isFunction = do
@@ -549,42 +565,54 @@ isFunction = do
 
 
 -- program = function-definition*
-program :: ExceptT Error (State ParserState) ()
+program :: ExceptT Error (State ParserState) [Node Parsed]
 program = do
   enterScope
   isEnd <- head_equalM EOF
   if isEnd
-  then return ()
+  then return []
   else do
     toks <- getTokens
     isFunc <- isFunction
     putTokens toks
     if isFunc
     then do
-      function
-      program
-    else do
-      global_variable
-      program
+      f <- function
+      nodes <- program
+      return (f : nodes)
 
-global_variable :: ExceptT Error (State ParserState) ()
+    else do
+      vars <- global_variable
+      nodes <- program
+      return (vars ++ nodes)
+
+global_variable :: ExceptT Error (State ParserState) [Node Parsed]
 global_variable = do
   ty <- declspec
-  iter ty
+  vars <- iter ty
   skip (Punct ";")
+  return vars
   where
     iter base = do
+
+      tokVar <- seeHeadToken
       (t, name) <- declarator base
-      _ <- new_gvar name t
+      --FIXME
+      -- _ <- new_gvar name t
+
+      let currentVar = add_node (EXT (DECL_VAR name t)) tokVar
       tok <- seeHeadTokenKind
+
       case tok of
         Punct "," -> do
           skip (Punct ",")
-          iter base
-        _         -> pure ()
+          vars <- iter base
+          return (currentVar : vars)
+        _         -> return [currentVar]
 
 
-parse :: [Token] -> Either Error ([Obj], [Token], (IntMap Obj))
+
+parse :: [Token] -> Either Error ([Node Parsed])
 parse toks = do
   let initState = ParserState
         { tokens      = toks
@@ -599,4 +627,4 @@ parse toks = do
   let storage = allObjects newState
   case r of
     Left e -> Left e
-    Right _ -> return (globals, toks, storage)
+    Right _ -> return ([])
