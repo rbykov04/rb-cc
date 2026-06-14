@@ -228,12 +228,7 @@ primary = do
         Num v -> do
           add_untyped_node (NUM v) t
         Str str -> do
-          -- FIXME
-          --let ty = array_of make_char (length str + 1)
-          --o <- new_string_literal (str ++ "\0") ty
           add_untyped_node (EXT (STR_VALUE str)) t
-          --add_untyped_node (VAR o) t
-          --FIXME
         Ident str -> do
           next_kind <- seeHeadTokenKind
           case next_kind of
@@ -242,13 +237,6 @@ primary = do
               funcall
             _ -> do
               add_untyped_node (VAR str) t
-              -- FIXME
-              {-
-              fv <- find_var str
-              case fv of
-                Nothing -> throwE (ErrorToken t "undefined variable")
-                 Just var -> add_untyped_node (VAR (objKey var)) t
-              -}
         Punct "(" -> do
           isGnuStatementExpression <- head_equalM (Punct "{")
           if isGnuStatementExpression
@@ -409,8 +397,6 @@ declaration = do
   where
     decl_expr basety nodes = do
       (ty, name) <- declarator basety
-      -- FIXME
-      -- key <- new_lvar name ty
       isAssign <- head_equalM (Punct "=")
       if isAssign
       then do
@@ -439,9 +425,7 @@ is_type = do
     _                -> return False
 compound_stmt  = do
   tok <- seeHeadToken
-  -- FIXME --enterScope
   nodes <- iter []
-  -- FIXME leaveScope
 
   r <- add_untyped_node (BLOCK nodes) tok
   return r
@@ -536,25 +520,8 @@ function = do
   ty <- declspec
   (ftype, name) <- declarator ty
   skip (Punct "{")
-
-  -- FIXME enterScope
-
   body <- compound_stmt
-
-  -- FIXME
-  -- locals <- getLocals
-  --key <- new_gvar name ftype
-  --update_var (updateFunc (map objKey locals) nodes) key
-
-  -- FIXME leaveScope
-
-  --add_node (EXT (FUNCTION name t)) tok
   return $ add_node (EXT (FUNCTION name ftype body)) tok
-  {-
-FIXME
-  where
-    updateFunc locals nodes obj = obj {objLocals = locals, objBody = nodes};
--}
 
 makeType kind = Type kind (-100)
 

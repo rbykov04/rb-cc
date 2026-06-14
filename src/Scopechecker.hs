@@ -179,19 +179,80 @@ scopedNode node kind =
 scopeCheckNode :: Node Parsed -> ExceptT Error (State ScopeCheckerState) (Node Typed)
 scopeCheckNode node = case nodeNode node of
   NUM v -> scopedNode node (NUM v)
+
   VAR name -> do
     fv <- find_var name
     case fv of
       Nothing -> throwE (ErrorScope node "undefined variable")
       Just var -> scopedNode node (VAR (objKey var))
+
+  Assign lhs rhs -> do
+    chLhs <- scopeCheckNode lhs
+    chRhs <- scopeCheckNode rhs
+    scopedNode node (Assign chLhs chRhs)
+
+  BIN_OP op lhs rhs -> do
+    chLhs <- scopeCheckNode lhs
+    chRhs <- scopeCheckNode rhs
+    scopedNode node (BIN_OP op chLhs chRhs)
+
+  SIZEOF var -> do
+    chVar <- scopeCheckNode var
+    scopedNode node (SIZEOF chVar)
+
+  UNARY op lhs -> do
+    chLhs <- scopeCheckNode lhs
+    scopedNode node (UNARY op chLhs)
+
+  EXPS_STMT lhs -> do
+    chLhs <- scopeCheckNode lhs
+    scopedNode node (EXPS_STMT chLhs)
+
+  STMT_EXPR lhs -> do
+    chLhs <- scopeCheckNode lhs
+    scopedNode node (STMT_EXPR chLhs)
+
+  FUNCALL name body -> do
+    checkedBody <- mapM scopeCheckNode body
+    scopedNode node (FUNCALL name checkedBody)
+
   RETURN body -> do
     checkedBody <- scopeCheckNode body
     scopedNode node (RETURN checkedBody)
+
   BLOCK body -> do
+    enterScope
     checkedBody <- mapM scopeCheckNode body
+    leaveScope
+
     scopedNode node (BLOCK checkedBody)
+
+  IF unCond  unThen unElse   -> do
+    chCond <- scopeCheckNode unCond
+    chThen <- scopeCheckNode unThen
+    chElse <- traverse scopeCheckNode unElse
+    scopedNode node (IF chCond chThen chElse)
+
+  FOR unInit unCond unInc unBody -> do
+    chInit <- traverse scopeCheckNode unInit
+    chCond <- traverse scopeCheckNode unCond
+    chInc <- traverse scopeCheckNode unInc
+    chBody <- scopeCheckNode unBody
+    scopedNode node (FOR chInit chCond chInc chBody)
+
+  EXT (DECL_VAR name unType) -> do
+    ty <- upgradeType unType
+    key <- new_lvar name ty
+    scopedNode node (VAR key)
+
+  EXT (STR_VALUE val) -> do
+      let ty = array_of make_char (length val + 1)
+      key <- new_string_literal (val ++ "\0") ty
+      scopedNode node (VAR key)
+
   EXT (FUNCTION name unType body) -> throwE (ErrorScope node "Function can be define only on top level")
-  _ -> throwE (ErrorScope node "this is not supported")
+
+
 
 
 upgradeType :: Type Parsed -> ExceptT Error (State ScopeCheckerState) (Type Typed)
@@ -214,8 +275,6 @@ upgradeType ty = case typeKind ty of
         tyParam <- upgradeType unParam
         return (tyParam , name)
 
-
-
 topLevel :: [Node Parsed] -> ExceptT Error (State ScopeCheckerState) ()
 topLevel nodes = mapM_ checkTopLevel nodes
   where
@@ -226,12 +285,15 @@ topLevel nodes = mapM_ checkTopLevel nodes
         key <- new_gvar name tyType
         return ()
       EXT (FUNCTION name unType body) -> do
+        putLocals []
+
+        enterScope
+
         tyType <- upgradeType unType
         key <- new_gvar name tyType
 
-        enterScope
-        putLocals []
         checkedBody <- scopeCheckNode body
+
         locals <- getLocals
         update_var (updateFunc (map objKey locals) [checkedBody]) key
         leaveScope
@@ -251,5 +313,7 @@ scopecheck ast = do
   let globals = (snd . currentVars)  newState
   let storage = allObjects newState
   case r of
-    Left e -> Left e
+    Left e -> case e of
+      ErrorScope node text -> Left (ErrorScopeEx node (scopes newState) text)
+      _ -> Left e
     Right _ -> return (globals, storage)

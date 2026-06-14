@@ -11,12 +11,16 @@ import Data.IntMap.Lazy
 import Data.Either
 import Data.List
 import Data.Maybe
+import Text.Pretty.Simple
+import Data.Text.Lazy (unpack)
 
 runPurePipeline :: String -> Either Error ([Obj], IntMap Obj)
 runPurePipeline sourceCode = do
   tokens <- tokenize_ sourceCode
   ast    <- (parse . convert_keywords) tokens
   scopecheck ast
+
+printErr err = unpack (pShow err)
 
 spec :: Spec
 spec = do
@@ -26,7 +30,7 @@ spec = do
       it "allows global variables to be accessed inside functions" $ do
         let code = "int x; int main() { return x; }"
         case runPurePipeline code of
-          Left err -> expectationFailure $ "compile is failed: " ++ show err
+          Left err -> expectationFailure $ "compile is failed: " ++ printErr err
           Right (globals, _) -> do
             let mGvar = find (\o -> objName o == "x") globals
             case mGvar of
@@ -34,11 +38,19 @@ spec = do
                         objIsLocal xVar `shouldBe` False
                         typeKind (objType xVar) `shouldBe` INT
                 Nothing -> expectationFailure "Global 'x' has not been founded!"
-{-
       it "allows local variables within their native block scope" $ do
-        let code = "int main() { int y = 5; return y; }"
-        runPurePipeline code `shouldSatisfy` isRight
+        let code = "int main() { int y; return y; }"
+        case runPurePipeline code of
+          Left err -> expectationFailure $ "compile is failed: "
+                ++ printErr err
+          Right (globals, symTable) -> do
+            let main = find (\o -> objName o == "main") globals
+            case main of
+                Nothing -> expectationFailure "Global 'main' has not been founded!"
+                Just objMain -> do
+                    return ()
 
+{-
     context "Block Scoping ({ }) and Variable Shadowing" $ do
       it "allows an inner block to read variables from a parent scope" $ do
         let code = "int main() { int x = 1; { int y = x; } return 0; }"
