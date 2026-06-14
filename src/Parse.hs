@@ -81,6 +81,7 @@ seeHeadTokenKind = do
 
 
 
+type ParserEx = ExceptT Error (State ParserState)
 type Parser = ExceptT Error (State ParserState) (Node Parsed)
 stmt          :: Parser
 expr_stmt     :: Parser
@@ -89,7 +90,7 @@ funcall       :: Parser
 unary         :: Parser
 assign        :: Parser
 compound_stmt :: Parser
-declaration   :: Parser
+declaration   :: ParserEx [Node Parsed]
 expr          :: Parser
 
 equality      :: Parser
@@ -393,20 +394,24 @@ declaration = do
   basety <- declspec
   nodes <- iter basety []
   skip (Punct ";")
-  add_untyped_node (BLOCK nodes) tok
+  return nodes
+
+--  add_untyped_node (BLOCK nodes) tok
   where
     decl_expr basety nodes = do
       (ty, name) <- declarator basety
+      tokDecl <- seeHeadToken
+      decl <- add_untyped_node (EXT (DECL_VAR name ty)) tokDecl
       isAssign <- head_equalM (Punct "=")
       if isAssign
       then do
         tok <- popHeadToken
-        lhs <- add_untyped_node (EXT (DECL_VAR name ty)) tok
+        lhs <- add_untyped_node (VAR name) tok
         rhs <- assign
         node <- add_untyped_node (Assign lhs rhs) tok
         expression  <- add_untyped_node (EXPS_STMT node) tok
-        return $ nodes ++ [expression]
-      else return nodes
+        return $ nodes ++ [decl,  expression]
+      else return $ nodes ++ [decl]
 
     iter basety nodes = do
       nodes_ <- decl_expr basety nodes
@@ -442,7 +447,7 @@ compound_stmt  = do
         if isType
         then do
           node <- declaration
-          iter (nodes ++ [node])
+          iter (nodes ++ node)
         else do
           node <- stmt
           iter (nodes ++ [node])

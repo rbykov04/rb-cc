@@ -43,14 +43,12 @@ spec = do
         case runPurePipeline code of
           Left err -> expectationFailure $ "compile is failed: "
                 ++ printErr err
-          Right (globals, symTable) -> do
+          Right (globals, _) -> do
             let main = find (\o -> objName o == "main") globals
             case main of
                 Nothing -> expectationFailure "Global 'main' has not been founded!"
-                Just objMain -> do
-                    return ()
+                Just _ -> return ()
 
-{-
     context "Block Scoping ({ }) and Variable Shadowing" $ do
       it "allows an inner block to read variables from a parent scope" $ do
         let code = "int main() { int x = 1; { int y = x; } return 0; }"
@@ -81,6 +79,12 @@ spec = do
       it "fails on variable redefinition within the same precise scope level" $ do
         -- Error: declaring the same variable twice in the exact same block
         let code = "int main() { int a = 1; int a = 2; return 0; }"
-        runPurePipeline code `shouldSatisfy` isLeft
-
--}
+        case runPurePipeline code of
+          Left err -> return ()
+          Right (globals, symTable) -> do
+                expectationFailure (printErr (globals, symTable))
+        --FIXME: add check for redefintion of global vars
+    context "Happy path(regresion): stm" $ do
+      it "stm" $ do
+        let code = "int main(){ ASSERT(3, ({ int x; if (0) x=2; else x=3; x; })); }"
+        runPurePipeline code `shouldSatisfy` isRight

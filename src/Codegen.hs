@@ -191,7 +191,7 @@ gen_expr node@(Node kind (tok , ty)) = case kind of
   _ -> throwE $ ErrorToken tok ("Codegen: invalid expression" ++ show (node))
 
 gen_stmt :: Node Typed-> ExceptT CodegenError (State CodegenState) ()
-gen_stmt (Node kind (tok, _)) = case kind of
+gen_stmt input@(Node kind (tok, _)) = case kind of
   EXPS_STMT node -> do
     setDepth 0
     gen_expr node
@@ -257,7 +257,7 @@ gen_stmt (Node kind (tok, _)) = case kind of
     fname <- getCurFuncName
     genLineLn $ "  jmp .L.return." ++ fname
 
-  _ -> throwE $ ErrorToken tok ("gen stmt: invalid statement ")
+  _ -> throwE $ ErrorToken tok ("gen stmt: invalid statement " ++ show input)
 
 
 gen_bin_op :: BinOp -> [String]

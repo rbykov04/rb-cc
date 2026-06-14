@@ -99,6 +99,12 @@ find_var_in name ((Scope (v : vars)): sc_tail) = do
   else do
     find_var_in name ((Scope (vars)): sc_tail)
 
+find_var_current_scope :: String -> ExceptT Error (State ScopeCheckerState) (Maybe Obj)
+find_var_current_scope name = do
+  r <- get
+  case scopes r of
+    [] -> return Nothing
+    (currentScope : _) -> find_var_in name [currentScope]
 
 
 find_var :: String -> ExceptT Error (State ScopeCheckerState) (Maybe Obj)
@@ -183,7 +189,7 @@ scopeCheckNode node = case nodeNode node of
   VAR name -> do
     fv <- find_var name
     case fv of
-      Nothing -> throwE (ErrorScope node "undefined variable")
+      Nothing -> throwE (ErrorScope node "undefined variable!")
       Just var -> scopedNode node (VAR (objKey var))
 
   Assign lhs rhs -> do
@@ -241,9 +247,14 @@ scopeCheckNode node = case nodeNode node of
     scopedNode node (FOR chInit chCond chInc chBody)
 
   EXT (DECL_VAR name unType) -> do
-    ty <- upgradeType unType
-    key <- new_lvar name ty
-    scopedNode node (VAR key)
+    redefinitionCheck <- find_var_current_scope name
+    case redefinitionCheck of
+      Just _  -> throwE (ErrorScope node ("redefinition of variable: " ++ name))
+      Nothing -> do
+          ty <- upgradeType unType
+          key <- new_lvar name ty
+          -- For DECL_VAR we don't need to generate anything.
+          scopedNode node (BLOCK [])
 
   EXT (STR_VALUE val) -> do
       let ty = array_of make_char (length val + 1)
@@ -279,7 +290,13 @@ topLevel :: [Node Parsed] -> ExceptT Error (State ScopeCheckerState) ()
 topLevel nodes = mapM_ checkTopLevel nodes
   where
     checkTopLevel :: Node Parsed -> ExceptT Error (State ScopeCheckerState) ()
-    checkTopLevel node = case nodeNode node of
+    checkTopLevel node = checkTopLevel_ node `catchE` handleErr
+      where
+        handleErr (ErrorScope _ text) = throwE (ErrorScope node text)
+        handleErr otherError          = throwE otherError
+
+    checkTopLevel_ :: Node Parsed -> ExceptT Error (State ScopeCheckerState) ()
+    checkTopLevel_ node = case nodeNode node of
       EXT (DECL_VAR name unType) -> do
         tyType <- upgradeType unType
         key <- new_gvar name tyType
