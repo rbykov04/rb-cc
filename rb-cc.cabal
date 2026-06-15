@@ -119,6 +119,8 @@ test-suite rb-cc-test
                     , containers
                     , hspec-discover >= 2.10
                     , text
+                    , directory
+                    , process
                     , pretty-simple
 
     build-tool-depends: hspec-discover:hspec-discover >= 2.10
