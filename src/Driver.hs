@@ -25,8 +25,8 @@ assembleGlobals globals storage = map restoreFunc globals
       Nothing        -> g
 
 
-pipeline :: String -> Either Error ([Obj], IntMap Obj)
-pipeline file = do
+compileToTypedAST :: String -> Either Error ([Obj], IntMap Obj)
+compileToTypedAST file = do
   toks                             <- tokenize_ file
   ast                              <- (parse . convert_keywords) toks
   (checkedGlobals, checkedStorage) <- scopecheck ast
@@ -35,7 +35,7 @@ pipeline file = do
 
 debugMode :: String -> Either Error String
 debugMode file = do
-  (checkedGlobals, checkedStorage) <- pipeline file
+  (checkedGlobals, checkedStorage) <- compileToTypedAST file
 
   let symTable = assembleGlobals checkedGlobals checkedStorage
   let dump = unpack (pShowNoColor symTable)
@@ -43,5 +43,5 @@ debugMode file = do
 
 compile :: String -> Either Error [String]
 compile file = do
-  (checkedGlobals, checkedStorage) <- pipeline file
+  (checkedGlobals, checkedStorage) <- compileToTypedAST file
   codegen checkedGlobals checkedStorage

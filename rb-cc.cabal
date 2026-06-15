@@ -91,6 +91,9 @@ library rb-cc-lib
         Parse,
         AST,
         Driver,
+        StackIsa,
+        VM,
+        StackCodegen,
         Semantic,
         Scopechecker,
         Tokenize
