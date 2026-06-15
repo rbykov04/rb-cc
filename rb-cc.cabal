@@ -121,6 +121,7 @@ test-suite rb-cc-test
                     , text
                     , directory
                     , process
+                    , file-embed
                     , pretty-simple
 
     build-tool-depends: hspec-discover:hspec-discover >= 2.10

@@ -189,7 +189,7 @@ scopeCheckNode node = case nodeNode node of
   VAR name -> do
     fv <- find_var name
     case fv of
-      Nothing -> throwE (ErrorScope node "undefined variable!")
+      Nothing -> throwE (ErrorScope node ("undefined variable! " ++ name))
       Just var -> scopedNode node (VAR (objKey var))
 
   Assign lhs rhs -> do
