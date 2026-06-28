@@ -25,15 +25,14 @@ import Data.Text.Lazy (unpack)
 
 import Data.FileEmbed (embedStringFile)
 
--- Эта строчка прочитает файл "runtime/vm.c" во время компиляции
--- и создаст переменную vmCode типа String.
 vmCode :: String
 vmCode = $(embedStringFile "src/runtime/vm.c")
 
 printErr err = unpack (pShow err)
 
-assertCompileAndRun filename prog result = do
-  case compile prog of
+
+assertCompileAndRunBase compiler filename prog result = do
+  case compiler prog of
     Left err -> expectationFailure (printErr (err))
     Right asm -> do
       let asmFile = filename ++ ".s"
@@ -42,7 +41,7 @@ assertCompileAndRun filename prog result = do
       let action = do
             (ret, _ , cErr) <- readProcessWithExitCode "gcc" [asmFile, "-o", exeFile] ""
             case ret of
-              ExitFailure c -> expectationFailure ("for " ++ "filename" ++ (printErr (cErr)))
+              ExitFailure c -> expectationFailure ("for " ++ "filename" ++ (printErr (cErr)) ++ asmFile)
               ExitSuccess -> do
                 (runExit, _ , _) <- readProcessWithExitCode ("./" ++ exeFile) [] ""
                 case runExit of
@@ -51,6 +50,9 @@ assertCompileAndRun filename prog result = do
       action `finally` do
         removeFile asmFile
         removeFile exeFile
+
+assertCompileAndRun    = assertCompileAndRunBase compile
+assertCompileAndRunX86 = assertCompileAndRunBase compileX86
 
 
 genVmC1 :: String
@@ -98,3 +100,4 @@ spec = do
             assertCompileAndRun "test_output" prog 42
             assertCompileAndRun "vm" (vmCode ++ genVmC1) 42
             assertCompileAndRun "vm2" (vmCode ++ genVmC2 (ir)) 42
+            assertCompileAndRunX86 "new_test" prog 42

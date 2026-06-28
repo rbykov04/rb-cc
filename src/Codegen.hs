@@ -6,6 +6,8 @@ import Error
 import Control.Monad.Trans.Except
 import Control.Monad.State
 
+import StackIsa
+
 import Data.IntMap.Lazy (IntMap, (!))
 import qualified Data.IntMap.Lazy as IntMap
 
@@ -381,3 +383,32 @@ codegen f storage= do
   case r of
     Left e -> Left e
     Right _ -> return code
+
+-- 1. save basic rbp to stack
+-- 2. save rsp to rbp
+prologX86 :: String
+prologX86 = "  .global main\n"
+         ++ "main:\n"
+         ++ "  pushq %rbp\n"
+         ++ "  movq %rsp, %rbp\n"
+
+-- 1. restore rsp from rbp
+-- 1. restore rbp from stack
+epilogX86 :: String
+epilogX86 = ".L.return.main:\n"
+         ++ "  movq %rbp, %rsp\n"
+         ++ "  popq %rbp\n"
+         ++ "  ret\n"
+
+
+genX86 :: StackOp -> String
+genX86 (PushInt n) = "  pushq $" ++ show n ++ "\n"
+genX86 Ret = "  popq %rax\n"
+          ++ "  jmp .L.return.main\n"
+
+codegenX86 :: [StackOp] -> Either Error String
+codegenX86 op = do
+      let prolog = prologX86
+          epilog = epilogX86
+          body   = map genX86 op
+      return (prolog ++ concat body ++ epilog)

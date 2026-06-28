@@ -7,6 +7,7 @@ import Parse
 import Semantic
 import Error
 import AST
+import StackCodegen
 import Semantic (typecheck)
 import Scopechecker (scopecheck)
 import Text.Printf
@@ -45,3 +46,10 @@ compile :: String -> Either Error [String]
 compile file = do
   (checkedGlobals, checkedStorage) <- compileToTypedAST file
   codegen checkedGlobals checkedStorage
+
+compileX86 :: String -> Either Error [String]
+compileX86 file = do
+  (checkedGlobals, checkedStorage) <- compileToTypedAST file
+  let ir = toIR (head (objBody (checkedStorage ! 1)))
+  text <- codegenX86 ir
+  return [text]
