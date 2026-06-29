@@ -35,14 +35,18 @@ eval bytecode = do
       PushInt n -> do
         modify (\s -> s {vmStack = n : vmStack s})
         eval bytecode
-      ADD -> do
-        lhs <- pop
-        rhs <- pop
-        push (lhs + rhs)
-        eval bytecode
+      ADD -> binary (+)
+      SUB -> binary (-)
       Ret -> do
         return ()
   where
+    binary op = do
+        rhs <- pop
+        lhs <- pop
+        push (lhs `op` rhs)
+        eval bytecode
+
+
     pop = do
       s <- get
       let (n, newStack) = case vmStack s of

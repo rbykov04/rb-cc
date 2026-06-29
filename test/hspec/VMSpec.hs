@@ -69,6 +69,7 @@ gen [] = []
 gen (PushInt n : xs) = 0 : n : gen xs
 gen (Ret       : xs) = 1 : gen xs
 gen (ADD       : xs) = 2 : gen xs
+gen (SUB       : xs) = 3 : gen xs
 
 genVmC2 :: [StackOp] -> String
 genVmC2 prog =
@@ -83,34 +84,25 @@ genVmC2 prog =
        ++ "   return vm_run(program, " ++ show size ++ ");"
        ++ "}"
 
+diffTest prog resultMustBe= do
+    it prog $ do
+        case compileToTypedAST prog of
+          Left err -> expectationFailure (printErr (err))
+          Right (globals, storage) -> do
+            -- FIXME : search main
+            let ir = toIR (head (objBody (storage ! 1)))
+            runVM ir `shouldBe` resultMustBe
+            assertCompileAndRun "test_output" prog resultMustBe
+            assertCompileAndRun "vm2" (vmCode ++ genVmC2 (ir)) resultMustBe
+            assertCompileAndRunX86 "new_test" prog resultMustBe
 
 
 spec :: Spec
 spec = do
   describe "vm" $ do
-
-    it "int main() { return 42; }" $ do
-        let prog = "int main() { return 42; }"
-        case compileToTypedAST prog of
-          Left err -> expectationFailure (printErr (err))
-          Right (globals, storage) -> do
-            -- FIXME : search main
-            let ir = toIR (head (objBody (storage ! 1)))
-            ir `shouldBe` [PushInt 42, Ret]
-            runVM ir `shouldBe` 42
-            assertCompileAndRun "test_output" prog 42
-            assertCompileAndRun "vm" (vmCode ++ genVmC1) 42
-            assertCompileAndRun "vm2" (vmCode ++ genVmC2 (ir)) 42
-            assertCompileAndRunX86 "new_test" prog 42
-    it "int main() { return 22 + 20; }" $ do
-        let prog = "int main() { return 22 + 20; }"
-        case compileToTypedAST prog of
-          Left err -> expectationFailure (printErr (err))
-          Right (globals, storage) -> do
-            -- FIXME : search main
-            let ir = toIR (head (objBody (storage ! 1)))
-            ir `shouldBe` [PushInt 22, PushInt 20, ADD, Ret]
-            runVM ir `shouldBe` 42
-            assertCompileAndRun "test_output" prog 42
-            assertCompileAndRun "vm2" (vmCode ++ genVmC2 (ir)) 42
-            assertCompileAndRunX86 "new_test" prog 42
+    it "basicProg: genVmC2" $ do
+        assertCompileAndRun "vm" (vmCode ++ genVmC1) 42
+    diffTest "int main() { return 42; }" 42
+    diffTest "int main() { return 22 + 20; }" 42
+    diffTest "int main() { return 22 + 20 + 20; }" 62
+    diffTest "int main() { return 22 + 20 - 21; }" 21

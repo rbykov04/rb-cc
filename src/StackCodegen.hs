@@ -17,6 +17,7 @@ visitNode node = case nodeNode node of
         visitedRhs = go rhs
         binOp = case op of
           Add -> [ADD]
+          Sub -> [SUB]
           _ -> error $ "not implemented yet" ++ show op
     in visitedLhs ++ visitedRhs ++ binOp
   _ -> error $ "not implemented yet" ++ show node
