@@ -403,6 +403,12 @@ epilogX86 = ".L.return.main:\n"
 
 genX86 :: StackOp -> String
 genX86 (PushInt n) = "  pushq $" ++ show n ++ "\n"
+
+genX86 (ADD) = "  popq %rcx\n"
+            ++ "  popq %rax\n"
+            ++ "  addq %rcx, %rax\n"
+            ++ "  pushq %rax\n"
+
 genX86 Ret = "  popq %rax\n"
           ++ "  jmp .L.return.main\n"
 

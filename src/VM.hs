@@ -35,5 +35,20 @@ eval bytecode = do
       PushInt n -> do
         modify (\s -> s {vmStack = n : vmStack s})
         eval bytecode
+      ADD -> do
+        lhs <- pop
+        rhs <- pop
+        push (lhs + rhs)
+        eval bytecode
       Ret -> do
         return ()
+  where
+    pop = do
+      s <- get
+      let (n, newStack) = case vmStack s of
+                []     -> error "we can't pop empty stack"
+                (h: t) -> (h , t)
+      modify (\s -> s {vmStack = newStack})
+      return n
+    push n = do
+        modify (\s -> s {vmStack = n : vmStack s})

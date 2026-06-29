@@ -46,7 +46,7 @@ assertCompileAndRunBase compiler filename prog result = do
                 (runExit, _ , _) <- readProcessWithExitCode ("./" ++ exeFile) [] ""
                 case runExit of
                   ExitFailure code -> code `shouldBe` result
-                  ExitSuccess -> expectationFailure "run must retut some code"
+                  ExitSuccess -> expectationFailure $ "run must return some code for" ++ show prog
       action `finally` do
         removeFile asmFile
         removeFile exeFile
@@ -68,6 +68,7 @@ gen :: [StackOp] -> [Int]
 gen [] = []
 gen (PushInt n : xs) = 0 : n : gen xs
 gen (Ret       : xs) = 1 : gen xs
+gen (ADD       : xs) = 2 : gen xs
 
 genVmC2 :: [StackOp] -> String
 genVmC2 prog =
@@ -99,5 +100,17 @@ spec = do
             runVM ir `shouldBe` 42
             assertCompileAndRun "test_output" prog 42
             assertCompileAndRun "vm" (vmCode ++ genVmC1) 42
+            assertCompileAndRun "vm2" (vmCode ++ genVmC2 (ir)) 42
+            assertCompileAndRunX86 "new_test" prog 42
+    it "int main() { return 22 + 20; }" $ do
+        let prog = "int main() { return 22 + 20; }"
+        case compileToTypedAST prog of
+          Left err -> expectationFailure (printErr (err))
+          Right (globals, storage) -> do
+            -- FIXME : search main
+            let ir = toIR (head (objBody (storage ! 1)))
+            ir `shouldBe` [PushInt 22, PushInt 20, ADD, Ret]
+            runVM ir `shouldBe` 42
+            assertCompileAndRun "test_output" prog 42
             assertCompileAndRun "vm2" (vmCode ++ genVmC2 (ir)) 42
             assertCompileAndRunX86 "new_test" prog 42
