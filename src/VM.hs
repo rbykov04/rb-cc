@@ -1,4 +1,4 @@
-module VM (runVM) where
+module VM where
 
 import Control.Monad.State
 import StackIsa
@@ -37,6 +37,8 @@ eval bytecode = do
         eval bytecode
       ADD -> binary (+)
       SUB -> binary (-)
+      MUL -> binary (*)
+      DIV -> binary div
       Ret -> do
         return ()
   where
@@ -56,3 +58,12 @@ eval bytecode = do
       return n
     push n = do
         modify (\s -> s {vmStack = n : vmStack s})
+
+gen :: [StackOp] -> [Int]
+gen [] = []
+gen (PushInt n : xs) = 0 : n : gen xs
+gen (Ret       : xs) = 1 : gen xs
+gen (ADD       : xs) = 2 : gen xs
+gen (SUB       : xs) = 3 : gen xs
+gen (MUL       : xs) = 4 : gen xs
+gen (DIV       : xs) = 5 : gen xs

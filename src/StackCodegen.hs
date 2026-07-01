@@ -18,6 +18,8 @@ visitNode node = case nodeNode node of
         binOp = case op of
           Add -> [ADD]
           Sub -> [SUB]
+          Mul -> [MUL]
+          Div -> [DIV]
           _ -> error $ "not implemented yet" ++ show op
     in visitedLhs ++ visitedRhs ++ binOp
   _ -> error $ "not implemented yet" ++ show node

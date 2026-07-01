@@ -400,17 +400,24 @@ epilogX86 = ".L.return.main:\n"
          ++ "  popq %rbp\n"
          ++ "  ret\n"
 
-genBinOp :: String -> String
-genBinOp op =  "  popq %rcx\n"
+genBinOpBase :: String -> String -> String
+genBinOpBase prolog op =  "  popq %rcx\n"
             ++ "  popq %rax\n"
+            ++ prolog
             ++ "  " ++ op ++ " %rcx, %rax\n"
             ++ "  pushq %rax\n"
+
+genBinOp = genBinOpBase ""
+
+
 
 genX86 :: StackOp -> String
 genX86 (PushInt n) = "  pushq $" ++ show n ++ "\n"
 
 genX86 (ADD) = genBinOp "addq"
 genX86 (SUB) = genBinOp "subq"
+genX86 (MUL) = genBinOp "imulq"
+genX86 (DIV) = genBinOpBase "  cqo\n"  "idivq"
 
 genX86 Ret = "  popq %rax\n"
           ++ "  jmp .L.return.main\n"

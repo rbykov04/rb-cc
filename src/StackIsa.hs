@@ -5,5 +5,7 @@ data StackOp
   = PushInt Int
   | ADD
   | SUB
+  | MUL
+  | DIV
   | Ret
   deriving (Show, Eq)

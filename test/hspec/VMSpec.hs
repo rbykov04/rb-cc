@@ -64,13 +64,6 @@ genVmC1 =  "int main(){"
        ++ "   return vm_run(program, 3);"
        ++ "}"
 
-gen :: [StackOp] -> [Int]
-gen [] = []
-gen (PushInt n : xs) = 0 : n : gen xs
-gen (Ret       : xs) = 1 : gen xs
-gen (ADD       : xs) = 2 : gen xs
-gen (SUB       : xs) = 3 : gen xs
-
 genVmC2 :: [StackOp] -> String
 genVmC2 prog =
   let code = gen prog
@@ -106,3 +99,6 @@ spec = do
     diffTest "int main() { return 22 + 20; }" 42
     diffTest "int main() { return 22 + 20 + 20; }" 62
     diffTest "int main() { return 22 + 20 - 21; }" 21
+    diffTest "int main() { return 5 * 4 + 1; }" 21
+    diffTest "int main() { return 5 * (4 + 1); }" 25
+    diffTest "int main() { return (25 / 5) * (4 + 1); }" 25
