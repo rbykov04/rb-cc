@@ -30,8 +30,6 @@ graph TD
 - [x] **SPRINT 3: Arithmetic & Comparisons** — Binary ops (`+`, `-`, `*`, `/`, `==`, `!=`, `<`, `<=`) and recursive unary minus (`-`).
 - [ ] **SPRINT 4: Variables & Control Flow** — `LoadLocal`/`StoreLocal`, flattened `Jmp`/`JmpZero` jumps, runtime visual stack frames.
 - [ ] **SPRINT 5: Complex Types & Macros** — Pointers (`*`, `&`), simulated flat RAM array for VMs, string preprocessor.
-- [ ] **SPRINT 6: Final Bootstrap & Direct ELF Execution** — Compiling self-contained raw Linux binaries via `melf` without `gcc`/`ld`.
-
 ---
 
 ## 🔬 END-TO-END TRANSLATION LISTING
@@ -44,9 +42,7 @@ Here is how the compiler translates a simple arithmetic expression `return -22 +
 
 ---
 
-## ⚡ TRIPLE DIFFERENTIAL TESTING
-
-## 🔬 TRIPLE DIFFERENTIAL TESTING (VERIFICATION ENGINE)
+## 🔬 TRIPLE DIFFERENTIAL TESTING
 
 The core strength of `rb-cc` is its **Triple Differential Testing Engine** implemented inside `VMSpec.hs`. Instead of just verifying text output, every single test case compiles the C source code down to three radically different execution targets simultaneously. 
 
