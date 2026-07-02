@@ -39,6 +39,10 @@ eval bytecode = do
       SUB -> binary (-)
       MUL -> binary (*)
       DIV -> binary div
+      CMPEQ -> binary (bool2Int (==))
+      CMPNE -> binary (bool2Int (/=))
+      CMPLT -> binary (bool2Int (<))
+      CMPLE -> binary (bool2Int (<=))
       Ret -> do
         return ()
   where
@@ -47,6 +51,8 @@ eval bytecode = do
         lhs <- pop
         push (lhs `op` rhs)
         eval bytecode
+
+    bool2Int op l r = if l `op` r then 1 else 0
 
 
     pop = do
@@ -67,3 +73,7 @@ gen (ADD       : xs) = 2 : gen xs
 gen (SUB       : xs) = 3 : gen xs
 gen (MUL       : xs) = 4 : gen xs
 gen (DIV       : xs) = 5 : gen xs
+gen (CMPEQ     : xs) = 6 : gen xs
+gen (CMPNE     : xs) = 7 : gen xs
+gen (CMPLT     : xs) = 8 : gen xs
+gen (CMPLE     : xs) = 9 : gen xs

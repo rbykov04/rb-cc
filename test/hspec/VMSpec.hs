@@ -102,3 +102,8 @@ spec = do
     diffTest "int main() { return 5 * 4 + 1; }" 21
     diffTest "int main() { return 5 * (4 + 1); }" 25
     diffTest "int main() { return (25 / 5) * (4 + 1); }" 25
+    diffTest "int main() { return  1==1; }" 1
+    diffTest "int main() { return  1!=0; }" 1
+    diffTest "int main() { return  0<1;  }" 1
+    diffTest "int main() { return  1<=2; }" 1
+    diffTest "int main() { return  1<=1; }" 1

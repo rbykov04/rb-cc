@@ -7,5 +7,9 @@ data StackOp
   | SUB
   | MUL
   | DIV
+  | CMPEQ    -- ==
+  | CMPNE    -- !=
+  | CMPLT    -- <
+  | CMPLE    -- <=
   | Ret
   deriving (Show, Eq)

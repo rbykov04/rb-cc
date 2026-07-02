@@ -401,14 +401,21 @@ epilogX86 = ".L.return.main:\n"
          ++ "  ret\n"
 
 genBinOpBase :: String -> String -> String
-genBinOpBase prolog op =  "  popq %rcx\n"
-            ++ "  popq %rax\n"
-            ++ prolog
-            ++ "  " ++ op ++ " %rcx, %rax\n"
-            ++ "  pushq %rax\n"
+genBinOpBase prolog op = "  popq %rcx\n"
+                      ++ "  popq %rax\n"
+                      ++ prolog
+                      ++ "  " ++ op ++ " %rcx, %rax\n"
+                      ++ "  pushq %rax\n"
 
 genBinOp = genBinOpBase ""
 
+genCMP :: String ->  String
+genCMP op = "  popq %rcx\n"
+         ++ "  popq %rax\n"
+         ++ "  cmp %rcx, %rax\n"
+         ++ "  "++ op ++" %al\n"
+         ++ "  movzb %al, %rax\n"
+         ++ "  pushq %rax\n"
 
 
 genX86 :: StackOp -> String
@@ -418,6 +425,10 @@ genX86 (ADD) = genBinOp "addq"
 genX86 (SUB) = genBinOp "subq"
 genX86 (MUL) = genBinOp "imulq"
 genX86 (DIV) = genBinOpBase "  cqo\n"  "idivq"
+genX86 (CMPEQ) = genCMP "sete"
+genX86 (CMPNE) = genCMP "setne"
+genX86 (CMPLT) = genCMP "setl"
+genX86 (CMPLE) = genCMP "setle"
 
 genX86 Ret = "  popq %rax\n"
           ++ "  jmp .L.return.main\n"

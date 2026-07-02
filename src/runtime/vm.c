@@ -50,14 +50,27 @@ int vm_run(int* code, int code_size){
            int rhs = pop(&sp, stack);
            int lhs = pop(&sp, stack);
            push(&sp, stack, lhs / rhs);
+       //EQ
+       } else if (op == 6){
+           int rhs = pop(&sp, stack);
+           int lhs = pop(&sp, stack);
+           push(&sp, stack, lhs == rhs);
+       //NEQ
+       } else if (op == 7){
+           int rhs = pop(&sp, stack);
+           int lhs = pop(&sp, stack);
+           push(&sp, stack, lhs != rhs);
+       //LT
+       } else if (op == 8){
+           int rhs = pop(&sp, stack);
+           int lhs = pop(&sp, stack);
+           push(&sp, stack, lhs < rhs);
+       //LE
+       } else if (op == 9){
+           int rhs = pop(&sp, stack);
+           int lhs = pop(&sp, stack);
+           push(&sp, stack, lhs <= rhs);
        }
-
-
-
-
-
-
-
    }
    return 0;
 }

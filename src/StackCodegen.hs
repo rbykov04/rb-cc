@@ -20,7 +20,10 @@ visitNode node = case nodeNode node of
           Sub -> [SUB]
           Mul -> [MUL]
           Div -> [DIV]
-          _ -> error $ "not implemented yet" ++ show op
+          ND_EQ -> [CMPEQ]
+          ND_NE -> [CMPNE]
+          ND_LT -> [CMPLT]
+          ND_LE -> [CMPLE]
     in visitedLhs ++ visitedRhs ++ binOp
   _ -> error $ "not implemented yet" ++ show node
   where go = visitNode
