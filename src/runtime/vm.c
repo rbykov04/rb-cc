@@ -70,6 +70,10 @@ int vm_run(int* code, int code_size){
            int rhs = pop(&sp, stack);
            int lhs = pop(&sp, stack);
            push(&sp, stack, lhs <= rhs);
+       //NEGATIVE
+       } else if (op == 10){
+           int a = pop(&sp, stack);
+           push(&sp, stack, -a);
        }
    }
    return 0;

@@ -11,6 +11,13 @@ visitNode node = case nodeNode node of
   NUM n    -> [PushInt n]
   RETURN v -> go v ++ [Ret]
   BLOCK nodes -> concatMap go nodes
+  UNARY op n  ->
+    let
+        visitedN = go n
+        unOp = case op of
+          Neg -> [NEG]
+          _ -> error $ "not implemented yet" ++ show node
+    in visitedN ++ unOp
   BIN_OP op lhs rhs  ->
     let
         visitedLhs = go lhs

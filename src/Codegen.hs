@@ -430,6 +430,10 @@ genX86 (CMPNE) = genCMP "setne"
 genX86 (CMPLT) = genCMP "setl"
 genX86 (CMPLE) = genCMP "setle"
 
+genX86 (NEG) = "  popq %rax\n"
+            ++ "  negq %rax\n"
+            ++ "  pushq %rax\n"
+
 genX86 Ret = "  popq %rax\n"
           ++ "  jmp .L.return.main\n"
 

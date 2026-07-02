@@ -11,5 +11,6 @@ data StackOp
   | CMPNE    -- !=
   | CMPLT    -- <
   | CMPLE    -- <=
+  | NEG
   | Ret
   deriving (Show, Eq)

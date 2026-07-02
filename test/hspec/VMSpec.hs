@@ -107,3 +107,6 @@ spec = do
     diffTest "int main() { return  0<1;  }" 1
     diffTest "int main() { return  1<=2; }" 1
     diffTest "int main() { return  1<=1; }" 1
+    diffTest "int main() { return  -10+20; }" 10
+    diffTest "int main() { return  - - 10; }" 10
+    diffTest "int main() { return  - - +10; }" 10

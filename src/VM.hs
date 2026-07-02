@@ -43,6 +43,11 @@ eval bytecode = do
       CMPNE -> binary (bool2Int (/=))
       CMPLT -> binary (bool2Int (<))
       CMPLE -> binary (bool2Int (<=))
+      NEG -> do
+        a <- pop
+        push (- a)
+        eval bytecode
+
       Ret -> do
         return ()
   where
@@ -77,3 +82,4 @@ gen (CMPEQ     : xs) = 6 : gen xs
 gen (CMPNE     : xs) = 7 : gen xs
 gen (CMPLT     : xs) = 8 : gen xs
 gen (CMPLE     : xs) = 9 : gen xs
+gen (NEG       : xs) = 10 : gen xs
