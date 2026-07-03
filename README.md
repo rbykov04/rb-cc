@@ -1,4 +1,5 @@
 # rb-cc 🚀 (Compiler + IR + VM)
+[![CI (Build and Test)](https://github.com/rbykov04/rb-cc/actions/workflows/ci.yaml/badge.svg)](https://github.com/rbykov04/rb-cc/actions/workflows/ci.yaml)
 
 A toy C compiler written in Haskell, showcasing a multi-stage architecture with a flat stack-based Intermediate Representation (IR), a native x86_64 backend (AT&T syntax), and a dual-runtime execution verification engine.
 
